@@ -1,15 +1,20 @@
+import sys
+sys.path.append('.')
 import sqlalchemy
 from sqlalchemy.orm import sessionmaker
-from model import CurrencyNames, CurrencyValue, Base
+try:
+    from model import CurrencyNames, CurrencyValue, Base
+except:
+    from .model import CurrencyNames, CurrencyValue, Base
 from os import getenv
 
 TABLE = {}
 
 def get_engine():
-    login=getenv('DB_LOGIN',default='postgres'),
-    password=getenv('DB_PASSWORD',default='postgres'),
+    login,=getenv('DB_LOGIN',default='postgres'),
+    password,=getenv('DB_PASSWORD',default='postgres'),
     dbname=getenv('DB_NAME')
-    DNS = f"postgresql://{login}:{password}@localhost:5432/{dbname}"
+    DNS = f"postgresql+psycopg2://{login}:{password}@localhost:5432/{dbname}"
     engine = sqlalchemy.create_engine(DNS)
     return engine
 
@@ -26,17 +31,20 @@ def cleat_db(engine):
 class DataBase:
     def __init__(self) -> None:
         self.engine = get_engine()
-        self.session = sessionmaker(bind=self.engin)
+        self.session = sessionmaker(bind=self.engine)
         
     def __dell__(self):
         self.session.commit()
 
-    def get_session(self):
-        return self.session
-
+    def create(self,instance):
+        session = self.session()
+        session.add(instance)
+        session.commit()
 
     def get_or_create(self, model, **kwargs):
-        session = self.session
+        session = self.session()
+        print(kwargs)
+
         instance = session.query(model).filter_by(**kwargs).first()
         if instance:
             return instance

@@ -12,8 +12,8 @@ class CurrencyNames(Base):
 class CurrencyValue(Base):
     __tablename__ = 'currency_value'
     id = Column(BigInteger, autoincrement=True, primary_key=True)
-    name = Column(String, ForeignKey('currency_names.name'),nullable=False)
-    price = Column(Double,nullable=False)
-    datetime = Column(DateTime,nullable=None)
+    currency = Column(Integer, ForeignKey('currency_names.id'),nullable=False)
+    price = Column(Double, nullable=False)
+    datetime = Column(DateTime, nullable=None)
 
     currency_names = relationship(CurrencyNames, backref='currency_value', cascade='delete')

@@ -1,4 +1,5 @@
 tasks.txt
+scheme
 Pipfile
 Pipfile.lock
 .env
