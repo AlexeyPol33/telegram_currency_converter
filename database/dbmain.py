@@ -31,18 +31,18 @@ def cleat_db(engine):
 class DataBase:
     def __init__(self) -> None:
         self.engine = get_engine()
-        self.session = sessionmaker(bind=self.engine)
-        
+        self.session = sessionmaker(bind=self.engine)()
+
     def __dell__(self):
         self.session.commit()
 
     def create(self,instance):
-        session = self.session()
+        session = self.session
         session.add(instance)
         session.commit()
 
     def get_or_create(self, model, **kwargs):
-        session = self.session()
+        session = self.session
         print(kwargs)
 
         instance = session.query(model).filter_by(**kwargs).first()
