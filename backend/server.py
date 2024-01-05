@@ -32,8 +32,14 @@ def get_last_currency_rate(currency_name_first,currency_name_second):
             pass
         else:
             pass #TODO Add error message
+        first_currency_value = db.session.query(CurrencyValue).filter_by(currency = first_currency_pair.id).order_by(CurrencyValue.id.desc()).first()
+        second_currency_pair = db.session.query(CurrencyValue).filter_by(currency = second_currency_pair.id).order_by(CurrencyValue.id.desc()).first()
+        last_currency_rate = {
+            'currency_name': currency_name,
+            'price': first_currency_value.price}
 
-        
+
+
     return jsonify(
         {
             'id': last_currency_rate.id,
