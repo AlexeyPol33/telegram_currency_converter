@@ -14,7 +14,8 @@ def get_engine():
     login,=getenv('DB_LOGIN',default='postgres'),
     password,=getenv('DB_PASSWORD',default='postgres'),
     dbname=getenv('DB_NAME')
-    DNS = f"postgresql+psycopg2://{login}:{password}@localhost:5432/{dbname}"
+    host = getenv('DB_HOST',default='localhost')
+    DNS = f"postgresql+psycopg2://{login}:{password}@{host}:5432/{dbname}"
     engine = sqlalchemy.create_engine(DNS)
     return engine
 

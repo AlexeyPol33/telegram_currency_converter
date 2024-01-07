@@ -1,0 +1,61 @@
+version: '3.9'
+
+volumes:
+  pgdata:
+
+services:
+  postgredb:
+    image: postgres:latest
+    environment:
+      - POSTGRES_DB=currency_converter
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5555:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin1 -d new_db"]
+      interval: 1m30s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    volumes:
+      - ./logs:/var/log
+      - pgdata:/var/lib/postgresql/data
+      - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+
+  harvester:
+    build:
+      context: .
+      dockerfile: harvester.dockerfile
+    environment:
+      - DB_NAME=currency_converter
+      - DB_LOGIN=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=postgredb
+    depends_on:
+      - postgredb
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend.dockerfile
+    environment:
+      - BACKEND_HOST=backend
+      - POSTGRES_DB=currency_converter
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - '5000:5000'
+    depends_on:
+      - postgredb
+
+  telebot:
+    build:
+      context: .
+      dockerfile: telebot.dockerfile
+    environment:
+      - TELEGRAM_BOT_TOKEN=
+    depends_on:
+      - backend
+    

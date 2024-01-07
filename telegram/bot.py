@@ -25,5 +25,8 @@ def menu(message):
         bot.send_message(message.from_user.id,'Укажите 2 валюты для конвертации',reply_markup=markup)
     pass
 
-if __name__ == '__main__':
+def run_bot():
     bot.polling(non_stop=True, interval=0)
+
+if __name__ == '__main__':
+    run_bot()

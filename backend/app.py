@@ -1,5 +1,7 @@
+import os
 import sys
 sys.path.append('.')
+from settings import BACKEND_HOST
 from flask import Flask, jsonify, request
 from flask.views import MethodView
 from database.dbmain import DataBase
@@ -49,5 +51,8 @@ def get_last_currency_rate(currency_name_first,currency_name_second):
         }
     )
 
+def start_server():
+    app.run(host=BACKEND_HOST)
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0')
+    start_server()

@@ -1,7 +1,9 @@
+
 import sys
 sys.path.append('.')
 import requests
 import datetime
+import time
 from database.dbmain import DataBase
 from database.model import CurrencyNames, CurrencyValue
 from sqlalchemy.orm import Session, sessionmaker
@@ -19,14 +21,10 @@ def get_usd():
         currency_value = CurrencyValue(currency=currency_name.id,price=value,datetime=date_time)
         db.create(currency_value)
 
+def start():
+    while True:
+        time.sleep(60)
+        get_usd()
 
 if __name__ == '__main__':
-    get_usd()
-#    url = 'https://iss.moex.com/iss/statistics/engines/futures/markets/indicativerates/securities/USD/RUB.json?iss.only=securities.current'
-#    res = requests.get(url)
-#    res = res.json()['securities.current']['data']
-#    print(res)
-#    
-#    date_time = datetime.datetime.strptime('2023-12-22 23:50:00', '%Y-%m-%d %H:%M:%S')
-#    print(date_time)
-#    pass
+    start()
