@@ -6,15 +6,15 @@ try:
     from model import CurrencyNames, CurrencyValue, Base
 except:
     from .model import CurrencyNames, CurrencyValue, Base
-from os import getenv
+from settings import DB_LOGIN,DB_PASSWORD,DB_NAME,DB_HOST
 
 TABLE = {}
 
 def get_engine():
-    login,=getenv('DB_LOGIN',default='postgres'),
-    password,=getenv('DB_PASSWORD',default='postgres'),
-    dbname=getenv('DB_NAME')
-    host = getenv('DB_HOST',default='localhost')
+    login = DB_LOGIN
+    password = DB_PASSWORD
+    dbname = DB_NAME
+    host = DB_HOST
     DNS = f"postgresql+psycopg2://{login}:{password}@{host}:5432/{dbname}"
     engine = sqlalchemy.create_engine(DNS)
     return engine

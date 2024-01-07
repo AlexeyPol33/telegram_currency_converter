@@ -1,4 +1,3 @@
-import os
 import sys
 sys.path.append('.')
 from settings import BACKEND_HOST
@@ -10,7 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 app = Flask('app')
 
-@app.route('/', methods=['GET'])
+@app.route('/info', methods=['GET'])
 def information():
     db = DataBase()
     return jsonify(

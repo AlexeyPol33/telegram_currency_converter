@@ -42,9 +42,10 @@ services:
       dockerfile: backend.dockerfile
     environment:
       - BACKEND_HOST=backend
-      - POSTGRES_DB=currency_converter
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
+      - DB_NAME=currency_converter
+      - DB_LOGIN=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=postgredb
     ports:
       - '5000:5000'
     depends_on:
@@ -56,6 +57,8 @@ services:
       dockerfile: telebot.dockerfile
     environment:
       - TELEGRAM_BOT_TOKEN=
+      - DB_HOST=postgredb
+      - BACKEND_HOST=backend
     depends_on:
       - backend
     
