@@ -12,10 +12,11 @@ app = Flask('app')
 @app.route('/info', methods=['GET'])
 def information():
     db = DataBase()
+    currencies = set(('/'.join([i.name for i in db.session.query(CurrencyNames).all()])).split('/'))
+
     return jsonify(
         {
-            'info':'test',
-            'currencies':[i.name for i in db.session.query(CurrencyNames).all()]
+            'currencies':list(currencies)
         }
     )
 
