@@ -22,34 +22,28 @@ def information():
 
 @app.route('/last_currency_rate/<currency_name_first>/<currency_name_second>', methods=['GET'])
 def get_last_currency_rate(currency_name_first,currency_name_second):
+
     currency_name = currency_name_first + '/' + currency_name_second
+    currency_name = currency_name.upper()
     db = DataBase()
     currency = db.session.query(CurrencyNames).filter_by(name = currency_name).first()
+    print (currency_name,currency)
     if currency:
         last_currency_rate = db.session.query(CurrencyValue).filter_by(currency = currency.id).order_by(CurrencyValue.id.desc()).first()
-    else:
-        first_currency_pair = db.session.query(CurrencyNames).filter_by(name = currency_name_first +'/RUB').first()
-        second_currency_pair = db.session.query(CurrencyNames).filter_by(name = currency_name_second +'/RUB').first()
-        if first_currency_pair and second_currency_pair:
-            pass
-        else:
-            pass #TODO Add error message
-        first_currency_value = db.session.query(CurrencyValue).filter_by(currency = first_currency_pair.id).order_by(CurrencyValue.id.desc()).first()
-        second_currency_pair = db.session.query(CurrencyValue).filter_by(currency = second_currency_pair.id).order_by(CurrencyValue.id.desc()).first()
-        last_currency_rate = {
-            'currency_name': currency_name,
-            'price': first_currency_value.price}
-
-
-
-    return jsonify(
-        {
+        return jsonify({
             'id': last_currency_rate.id,
             'currency_name': currency.name,
             'price':last_currency_rate.price,
             'datetime': last_currency_rate.datetime,
-        }
-    )
+        })
+    else:
+        first_currency_pair = db.session.query(CurrencyNames).filter_by(name = currency_name_first +'/RUB').first()
+        second_currency_pair = db.session.query(CurrencyNames).filter_by(name = currency_name_second +'/RUB').first()
+        if first_currency_pair and second_currency_pair:
+            db.session.query(CurrencyValue).filter_by
+        else:
+            pass #TODO Add error message
+    return ('Not found', 404)
 
 def start_server():
     app.run(host=BACKEND_HOST)
