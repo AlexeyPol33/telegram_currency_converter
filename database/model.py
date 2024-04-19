@@ -10,6 +10,7 @@ class CurrencyNames(Base):
     name = Column(String(20), unique=True)
 
 class CurrencyValue(Base):
+
     __tablename__ = 'currency_value'
     id = Column(BigInteger, autoincrement=True, primary_key=True)
     currency = Column(Integer, ForeignKey('currency_names.id'),nullable=False)

@@ -56,7 +56,7 @@ services:
       context: .
       dockerfile: telebot.dockerfile
     environment:
-      - TELEGRAM_BOT_TOKEN=
+      - TELEGRAM_BOT_TOKEN= #Your bot token
       - DB_HOST=postgredb
       - BACKEND_HOST=backend
     depends_on:

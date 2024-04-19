@@ -46,15 +46,12 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=update.effective_chat.id, text='Выберите целивую валюту:',reply_markup=reply_markup)
     elif message_text == 'cписок команд':
         commands = [
-            '/currency_rate базовая валюта/котируемая валюта - Показывает курс базовый валюты в котируемой'
+            '/currency_rate базовая валюта/котируемая валюта - Показывает курс базовый валюты в котируемой',
+            ''
             ]
         pass
     elif message_text == 'yправление':
         pass
-
-async def convert(update: Update, context: ContextTypes.DEFAULT_TYPE): #TODO
-    currency_pair = ''.join(context.args).upper()
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=currency_pair)
 
 async def currency_rate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -78,6 +75,29 @@ async def currency_rate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     currency_name = data['currency_name']
     price = data['price']
     message = f'{datetime}    {currency_name}    {price}'
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=message)
+
+async def convert(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if len(context.args) != 2 or context.args[1] != 7:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text='Не верный формат ввода')
+        return
+
+    value = context.args[0]
+    currency_pair = re(r'(\w\w\w)/(\w\w\w)',context.args[1]).groups()
+    async with aiohttp.ClientSession() as session:
+        response = await session.get(f'/convert/{value}/{currency_pair[0]}/{currency_pair[1]}')
+        if response.status != 200:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text='Ошибка: Не получилось\
+                                      конвертировать валюты, проверьте вводные данные, возможно требуемые валюты отсутствуют.')
+            return
+        
+        data = await response.json()
+
+    datetime = data['datetime']
+    currenvy_name = data['currency_name']
+    price = data['price']
+    message = f'{datetime}      {currenvy_name}     {price}'
     await context.bot.send_message(chat_id=update.effective_chat.id, text=message)
 
 
