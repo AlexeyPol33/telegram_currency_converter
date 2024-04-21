@@ -1,63 +1,145 @@
 import sys
 sys.path.append('.')
+import datetime
 from settings import BACKEND_HOST
 from flask import Flask, jsonify, request
 from flask.views import MethodView
 from database.dbmain import DataBase
+from typing import Optional, Union
 from database.model import CurrencyNames, CurrencyValue
+import sqlalchemy
 from sqlalchemy.orm import Session, sessionmaker
+from settings import DB_LOGIN, DB_PASSWORD, DB_NAME, DB_HOST
+from backend_exceptions import NoDataBaseValueError, CurrencyConversionError
 
 app = Flask('app')
 
-def get_last_currency_rate(currency_name_first: str, currency_name_second:str) -> dict:
+class CurrencyPair:
 
-    currency_name_first = currency_name_first.upper()
-    currency_name_second = currency_name_second.upper()
-    currency_name = currency_name_first + '/' + currency_name_second
-    db = DataBase()
-    currency = db.session.query(CurrencyNames).filter_by(name = currency_name).first()
+    first_currency: Optional[str]
+    second_currency: Optional[str]
+    date_time: datetime = None
+    value:float = None
+    _engine:sqlalchemy.engine = None
+    _currency_name:None|CurrencyNames|tuple[CurrencyNames] = None
+    _reverse_pair:bool = False
 
-    if currency:
-        last_currency_rate = db.session.query(CurrencyValue).filter_by(currency = currency.id).order_by(CurrencyValue.id.desc()).first()
-        return {
-            'id': last_currency_rate.id,
-            'currency_name': currency.name,
-            'price':last_currency_rate.price,
-            'datetime': last_currency_rate.datetime,
-        }
-    else:
-        reverse_currency_name = currency_name_second + '/' + currency_name_first
-        currency = db.session.query(CurrencyNames).filter_by(name = reverse_currency_name).first()
+    def __new__(cls,*args,**kwargs):
+        def engine():
+            login = DB_LOGIN
+            password = DB_PASSWORD
+            dbname = DB_NAME
+            host = DB_HOST
+            DNS = f"postgresql+psycopg2://{login}:{password}@{host}:5432/{dbname}"
+            engine = sqlalchemy.create_engine(DNS)
+            return engine
+        instance = super().__new__(cls)
+        instance._engine = engine()
+        return instance
 
-        if currency:
-            last_currency_rate = db.session.query(CurrencyValue).filter_by(currency = currency.id).order_by(CurrencyValue.id.desc()).first()
-            return {
-                'id': last_currency_rate.id,
-                'currency_name': reverse_currency_name,
-                'price':1/last_currency_rate.price,
-                'datetime': last_currency_rate.datetime,
-            }
+    def __init__(self,first_currency,second_currency) -> None:
+        self.first_currency = str(first_currency).upper()
+        self.second_currency = str(second_currency).upper()
+        with Session(bind=self._engine) as session:
+            self._currency_name = session.query(CurrencyNames).filter_by(name=f'{self.first_currency}/{self.second_currency}').first()
+            if self._currency_name is None:
+                self._currency_name = session.query(CurrencyNames).filter_by(name=f'{self.second_currency}/{self.first_currency}').first()
+                if self._currency_name is not None:
+                    self._reverse_pair = True
+        if self._currency_name is None:
+            self._currency_name = self._get_nearby_currency_pairs()
+        if self._currency_name is None:
+            raise NoDataBaseValueError('No currency data in the database')
+        
+    def _get_nearby_currency_pairs(self) -> tuple[CurrencyNames]:
+        first_list_currency_names:list[CurrencyNames] = None
+        second_list_currency_names:list[CurrencyNames] = None
+        with Session(bind=self._engine) as session:
+            first_list_currency_names = session.query(CurrencyNames).filter(CurrencyNames.name[:3] == self.first_currency).all()
+            second_list_currency_names = session.query(CurrencyNames).filter(CurrencyNames.name[:3] == self.second_currency).all()
+        if not first_list_currency_names or not second_list_currency_names:
+            raise NoDataBaseValueError('No currency data in the database')
+        for first_currency_name in first_list_currency_names:
+            for second_currency_name in second_list_currency_names:
+                if first_currency_name.name[4:] == second_currency_name.name[4:]:
+                    return tuple(first_currency_name, second_currency_name)
+        return None
+    
+    def to_json(self):
+        date_time:str = None
+        if isinstance(self.date_time,datetime.datetime):
+            date_time = datetime.datetime.strftime(self.date_time,'%Y-%m-%d %H:%M:%S')
+        data = {
+            'currency_pair':'/'.join([self.first_currency,self.second_currency]),
+            'datetime':date_time,
+            'value':self.value}
+        return jsonify(data)
+
+class CurrencyPairRateNow(CurrencyPair):
+
+    def _get_current_exchange_rate(self) -> None:
+        currency_value:CurrencyValue|dict = None
+        if isinstance(self._currency_name,CurrencyNames):
+            with Session(bind=self._engine) as session:
+                currency_value = session.query(CurrencyValue).\
+                    filter(
+                        CurrencyValue.currency == self._currency_name.id).\
+                    order_by(CurrencyValue.id.desc()).first()
+                if not currency_value:
+                    raise NoDataBaseValueError('No information on currency pair')
+            self.date_time = currency_value.datetime
+            if self._reverse_pair:
+                self.value = 1 / currency_value.price
+            else:
+                self.value = currency_value.price
+            return
+        elif isinstance(self._currency_name,tuple):
+            with Session(bind=self._engine) as session:
+                currency_value = {}
+                currency_value['first_currency_value'] = session.query(CurrencyValue).\
+                    filter(
+                        CurrencyValue.currency == self._currency_name[0].id).\
+                                    order_by(CurrencyValue.id.desc()).first()
+                currency_value['second_currency_value'] = session.query(CurrencyValue).\
+                    filter(
+                        CurrencyValue.currency == self._currency_name[1].id).\
+                                    order_by(CurrencyValue.id.desc()).first()
+                if  not currency_value['second_currency_value'] or not currency_value['first_currency_value']:
+                    raise NoDataBaseValueError('No information on currency pair')
+                self.date_time = currency_value['first_currency_value'].datetime
+                self.value = currency_value['first_currency_value'].price / currency_value['second_currency_value'].price
+                return 
         else:
-            _currency_name_first = currency_name_first + '/RUB'
-            _currency_name_second = currency_name_second + '/RUB'
+            raise CurrencyConversionError('Conversion error')
 
-            currency_name_first = db.session.query(CurrencyNames).filter_by(name=_currency_name_first).first()
-            currency_name_second = db.session.query(CurrencyNames).filter_by(name=_currency_name_second).first()
-            if currency_name_first and currency_name_second:
-                currency_first = db.session.query(CurrencyValue).filter_by(currency = currency_name_first.id).order_by(CurrencyValue.id.desc()).first()
-                currency_second = db.session.query(CurrencyValue).filter_by(currency = currency_name_second.id).order_by(CurrencyValue.id.desc()).first()
-                return {
-                    'id':'None',
-                    'currency_name': currency_name,
-                    'price': currency_first.price / currency_second.price,
-                    'datetime': str(currency_first.datetime) + ' - ' + str(currency_second.datetime)
-                    }
-    return None
+    def __call__(self, *args,**kwargs) -> jsonify:
+
+        self._get_current_exchange_rate()
+        self.value *= kwargs.get('value',1)
+        return self.to_json()
+
+class CurrencyPairRateByTime(CurrencyPair):
+    time_from:datetime
+    time_till:datetime
+
+    def __init__(self, first_currency, second_currency,time_from,time_till) -> None:
+        super().__init__(first_currency, second_currency)
+
 
 @app.route('/info', methods=['GET'])
 def information():
-    db = DataBase()
-    currencies = set(('/'.join([i.name for i in db.session.query(CurrencyNames).all()])).split('/'))
+    currencies = None
+    def engine():
+        login = DB_LOGIN
+        password = DB_PASSWORD
+        dbname = DB_NAME
+        host = DB_HOST
+        DNS = f"postgresql+psycopg2://{login}:{password}@{host}:5432/{dbname}"
+        engine = sqlalchemy.create_engine(DNS)
+        return engine
+    with Session(bind=engine()) as session:
+        quary = session.query(CurrencyNames).all()
+        currencies = set(('/'.join([i.name for i in quary])).split('/'))
 
     return jsonify(
         {
@@ -68,23 +150,17 @@ def information():
 @app.route('/last_currency_rate/<currency_name_first>/<currency_name_second>', methods=['GET'])
 def last_currency_rate(currency_name_first,currency_name_second):
 
-    last_rate = get_last_currency_rate(currency_name_first,currency_name_second)
-    if last_rate:
-        return jsonify(last_rate)
-    else:
-        return ('not found',404)
+    last_rate = CurrencyPairRateNow(currency_name_first,currency_name_second)
+    return last_rate()
 
 @app.route('/convert/<value>/<currency_name_first>/<currency_name_second>')
 def convert_currencies(value,currency_name_first,currency_name_second):
 
-    last_rate = get_last_currency_rate(currency_name_first,currency_name_second)
-    if last_rate and value.isdecimal():
-        last_rate['price'] = last_rate['price'] * float(value)
-        return jsonify(last_rate)
-
-    return ('Err', 400)
+    last_rate = CurrencyPairRateNow(currency_name_first,currency_name_second)
+    return last_rate(value = float(value))
 
 def start_server():
+
     app.run(host=BACKEND_HOST)
 
 if __name__ == '__main__':
