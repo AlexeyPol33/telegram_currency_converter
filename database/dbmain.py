@@ -29,31 +29,9 @@ def clear_db(engine):
     drop_tables(engine)
     create_tables(engine)
 
-class DataBase:
-    def __init__(self) -> None:
-        self.engine = get_engine()
-        self.session = sessionmaker(bind=self.engine)()
-
-    def create(self,instance):
-        session = self.session
-        session.add(instance)
-        session.commit()
-
-    def get_or_create(self, model, **kwargs):
-        session = self.session
-
-        instance = session.query(model).filter_by(**kwargs).first()
-        if instance:
-            return instance
-        else:
-            instance = model(**kwargs)
-            session.add(instance)
-            session.commit()
-            return instance
-
 if __name__ == '__main__':
     engine = get_engine()
-    clear_db(engine)
+    create_tables(engine)
 
 
 
