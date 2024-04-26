@@ -10,7 +10,6 @@ sys.path.append('.')
 
 
 class CurrencyPair:
-
     first_currency: str | None
     second_currency: str | None
     date_time: datetime = None
@@ -87,7 +86,7 @@ class CurrencyPair:
                     return tuple([first_currency_name, second_currency_name])
         return None
 
-    def to_json(self):
+    def to_dict(self):
         date_time: str = None
         if isinstance(self.date_time, datetime.datetime):
             date_time = datetime.datetime.\
@@ -98,11 +97,10 @@ class CurrencyPair:
                 self.second_currency]),
             'datetime': date_time,
             'value': self.value}
-        return jsonify(data)
+        return data
 
 
 class CurrencyPairRateNow(CurrencyPair):
-
     def _get_current_exchange_rate(self, *args, **kwargs):
         if isinstance(self._currency_name, CurrencyNames):
             currency_pair_rate = CurrencyPairRateNowSimpleConvert(obj=self)
@@ -114,14 +112,13 @@ class CurrencyPairRateNow(CurrencyPair):
         self.date_time = currency_pair_rate.date_time
         self.value = currency_pair_rate.value
         self.value *= kwargs.get('value', 1)
-        return self.to_json()
+        return self.to_dict()
 
-    def __call__(self, *args, **kwargs) -> jsonify:
+    def __call__(self, *args, **kwargs) -> dict:
         return self._get_current_exchange_rate(**kwargs)
 
 
 class CurrencyPairRateNowSimpleConvert(CurrencyPairRateNow):
-
     def _get_current_exchange_rate(self) -> None:
         with Session(bind=self._engine) as session:
             currency_value = session.query(CurrencyValue).\
@@ -139,7 +136,6 @@ class CurrencyPairRateNowSimpleConvert(CurrencyPairRateNow):
 
 
 class CurrencyPairRateNowCrossConvert(CurrencyPairRateNow):
-
     def _get_current_exchange_rate(self) -> None:
         with Session(bind=self._engine) as session:
             currency_value_one: CurrencyValue = None
@@ -190,7 +186,6 @@ class CurrencyPairRateByTime(CurrencyPair):
 
 
 class CurrencyPairRateByTimeSimpleConvert(CurrencyPairRateByTime):
-
     def __getitem__(self, key: datetime) -> list[dict]:
         currency_value: CurrencyValue = None
         delta = key + datetime.timedelta(days=1)
