@@ -2,8 +2,8 @@ import sys
 sys.path.append('.')
 import datetime
 from settings import BACKEND_HOST
-from flask import Flask, jsonify, request
-from flask.views import View
+from flask import Flask, jsonify, request, send_file
+from flask.views import MethodView, View
 from typing import Optional, Union
 from database.model import CurrencyNames, CurrencyValue
 import sqlalchemy
@@ -11,10 +11,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from settings import DB_LOGIN, DB_PASSWORD, DB_NAME, DB_HOST
 from backend_exceptions import NoDataBaseValueError, CurrencyConversionError
 from currency_pair_converter import CurrencyPair, CurrencyPairRateNow, CurrencyPairRateByTime
+import pandas as pd
+from io import BytesIO
 
 
-class СurrencyList(View):
-    _engine: sqlalchemy.engine 
+class СurrencyList(MethodView):
+    _engine: sqlalchemy.engine
 
     def __new__(cls):
         def engine() -> sqlalchemy.engine:
@@ -31,7 +33,7 @@ class СurrencyList(View):
 
     def get(self):
         currencies = None
-        with Session(bind=self._engine()) as session:
+        with Session(bind=self._engine) as session:
             quary = session.query(CurrencyNames).all()
             currencies = set(('/'.join([i.name for i in quary])).split('/'))
         return jsonify({
@@ -39,27 +41,60 @@ class СurrencyList(View):
             })
 
 
-class LastRate(View):
+class LastRate(MethodView):
     def get(self,currency_name_first,currency_name_second):
             last_rate = CurrencyPairRateNow(currency_name_first,currency_name_second)
             return jsonify(last_rate())
 
 
-class ConvertCurrencies(View):
+class ConvertCurrencies(MethodView):
     def get(self,currency_name_first,currency_name_second,value):
         last_rate = CurrencyPairRateNow(currency_name_first,currency_name_second)
         return last_rate(value = float(value))
 
 
-class HistoricalCurrencyRate(View):
-    def get(self,currency_name_first,currency_name_second,time_from,time_till):
-        time_from = datetime.datetime.strptime(time_from,'%Y-%m-%d')
-        time_till = datetime.datetime.strptime(time_till,'%Y-%m-%d')
-        currency_pair_rate_by_time = CurrencyPairRateByTime(currency_name_first,currency_name_second,time_from,time_till)
-        if time_from == time_till:
-            response = currency_pair_rate_by_time[time_from]
-        return jsonify(response)
+class HistoricalCurrencyRate(MethodView):
+    formats:dict = None
 
+    def __init__(self):
+        self.formats = {'.json':self.send_json,'.csv':self.send_csv,}
+        super().__init__()
+
+    def get(self,currency_name_first:str,currency_name_second:str):
+        _format: str = None
+        currency_name_first = currency_name_first.upper()
+        find_dot = currency_name_second.find('.')
+        if find_dot > 0:
+            _format = currency_name_second[find_dot:]
+            currency_name_second = currency_name_second[:find_dot]
+        currency_name_second = currency_name_second.upper()
+        time_from = request.args.get('time_from',datetime.datetime.now())
+        time_till = request.args.get('time_till',datetime.datetime.now())
+        if isinstance(time_from,str):
+            time_from = datetime.datetime.strptime(time_from,'%Y-%m-%d')
+        if isinstance(time_till,str):
+            time_till = datetime.datetime.strptime(time_till,'%Y-%m-%d')
+        print ('!!!!!!!!!!!!!!!!!!!!!!!!!!!!',currency_name_first,currency_name_second,time_from,time_till)
+        currency_pair_rate_by_time = CurrencyPairRateByTime(
+            first_currency=currency_name_first,
+            second_currency=currency_name_second,
+            time_from=time_from,
+            time_till=time_till
+            )
+
+        return self.formats.get(_format,'.json')(currency_pair_rate_by_time)
+
+    def send_json(self,currency_pair_rate_by_time: CurrencyPairRateByTime):
+
+        return jsonify([c for c in currency_pair_rate_by_time])
+
+    def send_csv(self,currency_pair_rate_by_time: CurrencyPairRateByTime):
+        bufer = None
+        dt={'one' : ['1', '2', '3'], 'two' : ['4', '5', '6']}
+        df = pd.DataFrame(dt,columns=dt.keys())
+        bufer = df.to_csv(index=False).encode()
+        bufer = BytesIO(bufer)
+        return send_file(bufer,download_name='test.csv',mimetype='text/csv')
 
 app = Flask('app')
 
@@ -76,7 +111,7 @@ app.add_url_rule(
     view_func=ConvertCurrencies.as_view('convert_currencies')
     )
 app.add_url_rule(
-    '/historical_currency_rate/<currency_name_first>/<currency_name_second>/<time_from>/<time_till>',
+    '/historical_currency_rate/<currency_name_first>/<currency_name_second>',
     view_func=HistoricalCurrencyRate.as_view('historical_currency_rate')
 )
 
