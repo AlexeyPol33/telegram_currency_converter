@@ -1,5 +1,4 @@
 import datetime
-from flask import jsonify
 from database.model import CurrencyNames, CurrencyValue
 import sqlalchemy
 from sqlalchemy.orm import Session
@@ -20,14 +19,14 @@ class CurrencyPair:
 
     def __new__(cls, *args, **kwargs):
         def engine():
-            login = DB_LOGIN
-            password = DB_PASSWORD
-            dbname = DB_NAME
-            host = DB_HOST
-            engine = sqlalchemy.\
-                create_engine(
-                    f'postgresql+psycopg2://{login}:\
-                        {password}@{host}:5432/{dbname}')
+            url_object = sqlalchemy.URL.create(
+                'postgresql+psycopg2',
+                username=DB_LOGIN,
+                password=DB_PASSWORD,
+                host=DB_HOST,
+                database=DB_NAME,
+            )
+            engine = sqlalchemy.create_engine(url_object)
             return engine
         instance = super().__new__(cls)
         instance._engine = engine()
@@ -37,34 +36,40 @@ class CurrencyPair:
                  second_currency: str = None,
                  obj: object = None, *args, **kwargs) -> None:
         if obj is not None:
-            self.first_currency = obj.first_currency
-            self.second_currency = obj.second_currency
-            self.date_time = obj.date_time
-            self.value = obj.value
-            self._currency_name = obj._currency_name
-            self._reverse_pair = obj._reverse_pair
+            self._init_obj(obj)
         elif first_currency and second_currency and obj is None:
-            self.first_currency = str(first_currency).upper()
-            self.second_currency = str(second_currency).upper()
-            with Session(bind=self._engine) as session:
-                self._currency_name = session.query(CurrencyNames).\
-                    filter_by(
-                        name=f'{self.first_currency}/{self.second_currency}'
-                        ).first()
-                if self._currency_name is None:
-                    self._currency_name = session.query(CurrencyNames).\
-                        filter_by(
-                            name=f'{self.second_currency}/\
-                                        {self.first_currency}'
-                            ).first()
-                    if self._currency_name is not None:
-                        self._reverse_pair = True
-            if self._currency_name is None:
-                self._currency_name = self._get_nearby_currency_pairs()
-            if self._currency_name is None:
-                raise NoDataBaseValueError('No currency data in the database')
+            self._init_currencies(first_currency, second_currency)
         else:
             raise CurrencyConversionError('initialization error')
+
+    def _init_currencies(self, first_currency, second_currency):
+        self.first_currency = str(first_currency).upper()
+        self.second_currency = str(second_currency).upper()
+        with Session(bind=self._engine) as session:
+            self._currency_name = session.query(CurrencyNames).\
+                filter_by(
+                    name=f'{self.first_currency}/{self.second_currency}'
+                    ).first()
+            if self._currency_name is None:
+                self._currency_name = session.query(CurrencyNames).\
+                    filter_by(
+                        name=f'{self.second_currency}/\
+                                        {self.first_currency}'
+                        ).first()
+                if self._currency_name is not None:
+                    self._reverse_pair = True
+        if self._currency_name is None:
+            self._currency_name = self._get_nearby_currency_pairs()
+        if self._currency_name is None:
+            raise NoDataBaseValueError('No currency data in the database')
+
+    def _init_obj(self, obj) -> None:
+        self.first_currency = obj.first_currency
+        self.second_currency = obj.second_currency
+        self.date_time = obj.date_time
+        self.value = obj.value
+        self._currency_name = obj._currency_name
+        self._reverse_pair = obj._reverse_pair
 
     def _get_nearby_currency_pairs(self) -> tuple[CurrencyNames]:
         first_list_currency_names: list[CurrencyNames] = None
