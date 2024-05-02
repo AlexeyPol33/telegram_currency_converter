@@ -15,6 +15,7 @@ import pandas as pd
 from io import BytesIO
 
 
+
 class СurrencyList(MethodView):
     _engine: sqlalchemy.engine
 
@@ -74,27 +75,22 @@ class HistoricalCurrencyRate(MethodView):
             time_from = datetime.datetime.strptime(time_from,'%Y-%m-%d')
         if isinstance(time_till,str):
             time_till = datetime.datetime.strptime(time_till,'%Y-%m-%d')
-        print ('!!!!!!!!!!!!!!!!!!!!!!!!!!!!',currency_name_first,currency_name_second,time_from,time_till)
         currency_pair_rate_by_time = CurrencyPairRateByTime(
             first_currency=currency_name_first,
             second_currency=currency_name_second,
             time_from=time_from,
             time_till=time_till
             )
-
-        return self.formats.get(_format,'.json')(currency_pair_rate_by_time)
+        return self.formats.get(_format,self.send_json)(currency_pair_rate_by_time)
 
     def send_json(self,currency_pair_rate_by_time: CurrencyPairRateByTime):
-
         return jsonify([c for c in currency_pair_rate_by_time])
 
     def send_csv(self,currency_pair_rate_by_time: CurrencyPairRateByTime):
-        bufer = None
-        dt={'one' : ['1', '2', '3'], 'two' : ['4', '5', '6']}
-        df = pd.DataFrame(dt,columns=dt.keys())
-        bufer = df.to_csv(index=False).encode()
-        bufer = BytesIO(bufer)
-        return send_file(bufer,download_name='test.csv',mimetype='text/csv')
+        data_frame = pd.DataFrame(*[data for data in currency_pair_rate_by_time])
+        csv = data_frame.to_csv(index=False).encode()
+        csv = BytesIO(csv)
+        return send_file(csv,download_name='test.csv',mimetype='text/csv')
 
 app = Flask('app')
 
