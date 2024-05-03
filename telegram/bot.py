@@ -1,16 +1,17 @@
 import logging
 import sys
 sys.path.append('.')
-import os
-import re
 import aiohttp
 import asyncio
 import settings
 from settings import BACKEND_HOST, TELEGRAM_BOT_TOKEN
-
+from abc import ABC,abstractmethod
+from urllib.parse import urlunparse
+from collections import namedtuple
 import logging
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
+from typing import NamedTuple
 
 
 logging.basicConfig(
@@ -18,103 +19,161 @@ logging.basicConfig(
     level=logging.INFO
 )
 
+
+commands = []
 menu_keyboard = [['Конвертировать'],['узнать курс валют'],['Список команд'],['Управление']]
 
-async def get_currencies():
-    async with aiohttp.ClientSession() as session:
-        response = await session.get(f'http://{BACKEND_HOST}:5000/info')
-        data = await response.json()
-        return data['currencies']
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await context.bot.send_message(chat_id=update.effective_chat.id, text='Я бот')    
-    reply_markup = ReplyKeyboardMarkup(menu_keyboard, resize_keyboard=True)
+class UrlComponents(NamedTuple):
+    scheme: str = 'http'
+    netloc: str = f'{BACKEND_HOST}:5000'
+    url: str = '/'
+    path: str = ''
+    query: dict = ''
+    fragment: str = ''
 
-    await context.bot.send_message(chat_id=update.effective_chat.id, text='Выберите опцию:', reply_markup=reply_markup)
+class BotCore:
+    global commands
 
-async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message_text = update.message.text.lower()
-    print(message_text)
-    if message_text == 'меню':
+    def __init__(self,token) -> None:
+        self.application = ApplicationBuilder().token(token).build()
+        [self.application.add_handler(c) for c in commands]
 
-        reply_markup = ReplyKeyboardMarkup(menu_keyboard, resize_keyboard=True)
-        await context.bot.send_message(chat_id=update.effective_chat.id, text='Выберите опцию:', reply_markup=reply_markup)
-    elif message_text == 'узнать курс валют':
-
-        currencies = list(await asyncio.gather(get_currencies()))
-        reply_markup = ReplyKeyboardMarkup(currencies, resize_keyboard=True)
-        await context.bot.send_message(chat_id=update.effective_chat.id, text='Выберите целивую валюту:',reply_markup=reply_markup)
-    elif message_text == 'cписок команд':
-        commands = [
-            '/currency_rate базовая валюта/котируемая валюта - Показывает курс базовый валюты в котируемой',
-            ''
-            ]
-        pass
-    elif message_text == 'yправление':
-        pass
-
-async def currency_rate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    currency_pair = ''.join(context.args).upper()
-    if len (currency_pair) == 7:
-        currency_pair = re.match(r'(\w\w\w)/(\w\w\w)',currency_pair).groups()
-    else:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text='Не верный формат валютной пары')
-        return
-
-    async with aiohttp.ClientSession() as session:
-        response = await session.get(f'http://{BACKEND_HOST}:5000/last_currency_rate/{currency_pair[0]}/{currency_pair[1]}')
-        if response.status != 200:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text='Ошибка: Не получилось\
-                                      конвертировать валюты, проверьте вводные данные, возможно требуемые валюты отсутствуют.')
-            return
-
-        data = await response.json()
-
-    datetime = data['datetime']
-    currency_name = data['currency_name']
-    price = data['price']
-    message = f'{datetime}    {currency_name}    {price}'
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=message)
-
-async def convert(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if len(context.args) != 2 or context.args[1] != 7:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text='Не верный формат ввода')
-        return
-
-    value = context.args[0]
-    currency_pair = re(r'(\w\w\w)/(\w\w\w)',context.args[1]).groups()
-    async with aiohttp.ClientSession() as session:
-        response = await session.get(f'/convert/{value}/{currency_pair[0]}/{currency_pair[1]}')
-        if response.status != 200:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text='Ошибка: Не получилось\
-                                      конвертировать валюты, проверьте вводные данные, возможно требуемые валюты отсутствуют.')
-            return
-        
-        data = await response.json()
-
-    datetime = data['datetime']
-    currenvy_name = data['currency_name']
-    price = data['price']
-    message = f'{datetime}      {currenvy_name}     {price}'
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=message)
+    def run(self):
+        self.application.run_polling()
 
 
-def run_bot():
-    application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+class RegisterCommand:
+    def __init__(self,command: str|filter,handler) -> None:
+        self.command = command
+        self.handler = handler
 
-    start_handler = CommandHandler('start',start)
-    currency_rate_handler = CommandHandler('currency_rate',currency_rate)
-    convert_handler = CommandHandler('convert',convert)
-    menu_handler = MessageHandler(filters.TEXT & (~filters.COMMAND), menu)
+    def __call__(self,obj,*args,**kwargs):
+        commands.append(self.handler(self.command,obj.execute))
+        return obj(*args,**kwargs)
 
-    application.add_handler(start_handler)
-    application.add_handler(convert_handler)
-    application.add_handler(menu_handler)
-    application.add_handler(currency_rate_handler)
 
-    application.run_polling()
+class Command(ABC):
+    @staticmethod
+    @abstractmethod
+    async def execute(update: Update, context: ContextTypes): pass
+
+
+@RegisterCommand('start',CommandHandler)
+class Start(Command):
+    @staticmethod
+    async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        reply_markup = ReplyKeyboardMarkup([], resize_keyboard=True)
+        message = 'что бы узнать все команды отправьте в чат /help,\
+                или выберите опцию на клавиатуре:'
+        message = ' '.join(message.split())
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=message,
+            reply_markup=reply_markup)    
+
+
+
+@RegisterCommand('help',CommandHandler)
+class CommandList(Command):
+    @staticmethod
+    async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        '''/help - Выводит справочную информацию о командах бота'''
+        _commands = [c for c in commands if isinstance(c,CommandHandler)]
+        descriptions = [' '.join(d.callback.__doc__.split()) for d in _commands if d.callback.__doc__]
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text='\n\n'.join(descriptions))
+
+
+@RegisterCommand('list_currencies',CommandHandler)
+class ListCurrencies(Command):
+    url = urlunparse(UrlComponents(url='/info'))
+
+    @staticmethod
+    async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        '''/list_currencies - выводи список доступных валют'''
+        url = ListCurrencies.url
+        async with aiohttp.ClientSession() as session:
+            response = await session.get(url)
+            data = await response.json()
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=' '.join(data['currencies']))
+
+
+@RegisterCommand('last_course',CommandHandler)
+class LastCourse(Command):
+    url: str = urlunparse(UrlComponents(url='/last_currency_rate/{}/{}'))
+
+    @staticmethod
+    async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        '''/last_course <base_currency> <quoted_currency> - получить текущий курс мосбиржи\
+            базовой валюты(base_currency) в котируемой валюте(quoted_currency)'''
+        try:
+            firs_currency = context.args[0]
+            second_currency = context.args[1]
+            url = LastCourse.url.format(firs_currency,second_currency)
+            async with aiohttp.ClientSession() as session:
+                response = await session.get(url)
+                if response.status != 200:
+                    await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text='''Ошибка: Не получилось конвертировать валюты,\
+                        проверьте вводные данные,\
+                        возможно требуемые валюты отсутствуют.''')
+                    return
+                data = await response.json()
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=str(data))
+        except IndexError:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text='Отсутствует требуемое значение')
+        except Exception as e:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=str(e))
+
+
+@RegisterCommand('convert',CommandHandler)
+class Convert(Command):
+    url: str = urlunparse(UrlComponents(url='/convert/{}/{}/{}'))
+
+    @staticmethod
+    async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        '''/convert <value> <base_currency> <quoted_currency> - конвертирует\
+        числовое значение(value) базовой валюты(base_currency) в\
+        котируемую валюту(quoted_currency) по последнему курсу мосбиржи'''
+        try:
+            value = float(context.args[0])
+            firs_currency = context.args[1]
+            second_currency = context.args[2]
+            url = Convert.url.format(value,firs_currency,second_currency)
+            async with aiohttp.ClientSession() as session:
+                response = await session.get(url)
+                if response.status != 200:
+                    await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text='''Ошибка: Не получилось конвертировать валюты,
+                        проверьте вводные данные,
+                        возможно требуемые валюты отсутствуют.''')
+                    return
+                data = await response.json()
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=str(data))
+        except IndexError:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text='Отсутствует требуемое значение')
+        except Exception as e:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=str(e))
+
 
 if __name__ == '__main__':
-    run_bot()
+    BotCore(TELEGRAM_BOT_TOKEN).run()
+
+
+    
