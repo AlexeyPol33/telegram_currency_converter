@@ -23,6 +23,18 @@ services:
       - ./logs:/var/log
       - pgdata:/var/lib/postgresql/data
       - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+  redis:
+    image: radis:latest
+    restart: unless-stopped
+    environment:
+      - REDIS_PASSWORD=redis
+      - REDIS_PORT=6379
+      - REDIS_DATABASES=16
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis
+      - ./local/etc/redis/redis.conf
 
   harvester:
     build:

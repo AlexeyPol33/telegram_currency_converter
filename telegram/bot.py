@@ -14,6 +14,7 @@ import logging
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
 from typing import NamedTuple
+import redis
 
 
 logging.basicConfig(
@@ -208,6 +209,9 @@ class CurrenciesCommandManager(Command):
 
 if __name__ == '__main__':
     BotCore(TELEGRAM_BOT_TOKEN).run()
+
+
+
 
 
 
