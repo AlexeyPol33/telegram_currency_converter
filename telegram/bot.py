@@ -8,6 +8,7 @@ import re
 from settings import BACKEND_HOST, TELEGRAM_BOT_TOKEN
 from abc import ABC,abstractmethod
 from urllib.parse import urlunparse
+import urllib3
 from collections import namedtuple
 import logging
 from telegram import Update, ReplyKeyboardMarkup
@@ -175,9 +176,10 @@ class Convert(Command):
                 chat_id=update.effective_chat.id,
                 text=str(e))
 
+
 @RegisterCommand(MessageHandler)
-class MessageManager(Command):
-    keybord = [['Конвертировать'],['узнать курс валют'],['Список команд'],['Управление']]
+class ActionCommandManager(Command):
+    keybord = [['Конвертировать'],['Узнать курс валют'],['Получить исторический курс'],['Список команд']]
     filter = (filters.Text([w[0] for w in keybord]))
     @staticmethod
     async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -195,9 +197,18 @@ class MessageManager(Command):
                 pass
 
 
+@RegisterCommand(MessageHandler)
+class CurrenciesCommandManager(Command):
+    keybord = urllib3.request('GET',urlunparse(UrlComponents(url='/info'))).json()['currencies']
+    filter = (filters.Text([w[0] for w in keybord]))
+    @staticmethod
+    async def execute(update: Update, context: ContextTypes):
+        pass
+
+
 if __name__ == '__main__':
-    #BotCore(TELEGRAM_BOT_TOKEN).run()
-    print (filters.Te)
+    BotCore(TELEGRAM_BOT_TOKEN).run()
+
 
 
 
