@@ -4,6 +4,7 @@ sys.path.append('.')
 import aiohttp
 import asyncio
 import settings
+import re
 from settings import BACKEND_HOST, TELEGRAM_BOT_TOKEN
 from abc import ABC,abstractmethod
 from urllib.parse import urlunparse
@@ -44,11 +45,14 @@ class BotCore:
 
 
 class RegisterCommand:
-    def __init__(self,command: str|filter,handler) -> None:
+
+    def __init__(self,handler,command: str = None) -> None:
         self.command = command
         self.handler = handler
 
     def __call__(self,obj,*args,**kwargs):
+        if self.command is None:
+            self.command = obj.filter
         commands.append(self.handler(self.command,obj.execute))
         return obj(*args,**kwargs)
 
@@ -59,7 +63,7 @@ class Command(ABC):
     async def execute(update: Update, context: ContextTypes): pass
 
 
-@RegisterCommand('start',CommandHandler)
+@RegisterCommand(CommandHandler,'start')
 class Start(Command):
     @staticmethod
     async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -74,7 +78,7 @@ class Start(Command):
 
 
 
-@RegisterCommand('help',CommandHandler)
+@RegisterCommand(CommandHandler,'help')
 class CommandList(Command):
     @staticmethod
     async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -86,7 +90,7 @@ class CommandList(Command):
             text='\n\n'.join(descriptions))
 
 
-@RegisterCommand('list_currencies',CommandHandler)
+@RegisterCommand(CommandHandler,'list_currencies')
 class ListCurrencies(Command):
     url = urlunparse(UrlComponents(url='/info'))
 
@@ -100,7 +104,7 @@ class ListCurrencies(Command):
             await context.bot.send_message(chat_id=update.effective_chat.id, text=' '.join(data['currencies']))
 
 
-@RegisterCommand('last_course',CommandHandler)
+@RegisterCommand(CommandHandler,'last_course')
 class LastCourse(Command):
     url: str = urlunparse(UrlComponents(url='/last_currency_rate/{}/{}'))
 
@@ -135,7 +139,7 @@ class LastCourse(Command):
                 text=str(e))
 
 
-@RegisterCommand('convert',CommandHandler)
+@RegisterCommand(CommandHandler,'convert')
 class Convert(Command):
     url: str = urlunparse(UrlComponents(url='/convert/{}/{}/{}'))
 
@@ -171,9 +175,30 @@ class Convert(Command):
                 chat_id=update.effective_chat.id,
                 text=str(e))
 
+@RegisterCommand(MessageHandler)
+class MessageManager(Command):
+    keybord = [['Конвертировать'],['узнать курс валют'],['Список команд'],['Управление']]
+    filter = (filters.Text([w[0] for w in keybord]))
+    @staticmethod
+    async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        message_text = update.message.text.lower()
+        match message_text:
+            case 'узнать курс валют':
+                pass
+            case'конвертировать':
+                pass
+            case 'Получить исторический курс':
+                pass
+            case 'cписок команд':
+                pass
+            case _:
+                pass
+
 
 if __name__ == '__main__':
-    BotCore(TELEGRAM_BOT_TOKEN).run()
+    #BotCore(TELEGRAM_BOT_TOKEN).run()
+    print (filters.Te)
+
 
 
     
