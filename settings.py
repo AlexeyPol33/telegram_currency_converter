@@ -11,4 +11,9 @@ DB_LOGIN=os.getenv('DB_LOGIN',default='postgres')
 DB_PASSWORD=os.getenv('DB_PASSWORD',default='postgres')
 DB_HOST=os.getenv('DB_HOST',default='localhost')
 
+REDIS_PASSWORD=os.getenv('REDIS_PASSWORD','redis')
+REDIS_PORT=os.getenv('REDIS_PORT',6379)
+REDIS_DATABASES=os.getenv('REDIS_DATABASES',16)
+REDIS_HOST=os.getenv('REDIS_HOST',default='localhost')
+
 COLLECT_HISTORICAL_DATA = os.getenv('COLLECT_HISTORICAL_DATA', default=False)
