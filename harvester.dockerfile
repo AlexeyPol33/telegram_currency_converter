@@ -7,6 +7,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . /harvester/
 
-CMD python database/dbmain.py create_tables && \
+CMD python database/model.py create_tables && \
     python harvester/imoex_harvester.py start
 

@@ -4,6 +4,7 @@ volumes:
   pgdata:
 
 services:
+
   postgredb:
     image: postgres:latest
     environment:
@@ -23,6 +24,7 @@ services:
       - ./logs:/var/log
       - pgdata:/var/lib/postgresql/data
       - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+
   redis:
     image: radis:latest
     restart: unless-stopped
@@ -41,6 +43,7 @@ services:
       context: .
       dockerfile: harvester.dockerfile
     environment:
+      - COLLECT_HISTORICAL_DATA=True
       - DB_NAME=currency_converter
       - DB_LOGIN=postgres
       - DB_PASSWORD=postgres
