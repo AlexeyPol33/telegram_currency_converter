@@ -26,12 +26,11 @@ services:
       - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
 
   redis:
-    image: radis:latest
+    image: redis:latest
     restart: unless-stopped
     environment:
-      - REDIS_PASSWORD=redis
       - REDIS_PORT=6379
-      - REDIS_DATABASES=16
+      - REDIS_DATABASES=1
     ports:
       - "6379:6379"
     volumes:
@@ -42,6 +41,7 @@ services:
     build:
       context: .
       dockerfile: harvester.dockerfile
+    restart: unless-stopped
     environment:
       - COLLECT_HISTORICAL_DATA=True
       - DB_NAME=currency_converter
@@ -55,6 +55,7 @@ services:
     build:
       context: .
       dockerfile: backend.dockerfile
+    restart: unless-stopped
     environment:
       - BACKEND_HOST=backend
       - DB_NAME=currency_converter
@@ -70,7 +71,9 @@ services:
     build:
       context: .
       dockerfile: telebot.dockerfile
+    restart: unless-stopped
     environment:
+      - REDIS_HOST=redis
       - TELEGRAM_BOT_TOKEN= #Your bot token
       - DB_HOST=postgredb
       - BACKEND_HOST=backend

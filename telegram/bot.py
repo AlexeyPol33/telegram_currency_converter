@@ -209,11 +209,3 @@ class CurrenciesCommandManager(Command):
 
 if __name__ == '__main__':
     BotCore(TELEGRAM_BOT_TOKEN).run()
-
-
-
-
-
-
-
-    
