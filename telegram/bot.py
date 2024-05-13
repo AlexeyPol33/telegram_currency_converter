@@ -5,7 +5,7 @@ import aiohttp
 import asyncio
 import settings
 import re
-from settings import BACKEND_HOST, TELEGRAM_BOT_TOKEN
+from settings import BACKEND_HOST, TELEGRAM_BOT_TOKEN,REDIS_HOST,REDIS_PORT
 from abc import ABC,abstractmethod
 from urllib.parse import urlunparse
 import urllib3
@@ -17,14 +17,12 @@ from typing import NamedTuple
 import redis
 
 
+commands = []
+message_broker = redis.Redis(host=REDIS_HOST, port=REDIS_PORT)
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
-
-
-commands = []
-menu_keyboard = [['Конвертировать'],['узнать курс валют'],['Список команд'],['Управление']]
 
 
 class UrlComponents(NamedTuple):
@@ -34,6 +32,7 @@ class UrlComponents(NamedTuple):
     path: str = ''
     query: dict = ''
     fragment: str = ''
+
 
 class BotCore:
     global commands
@@ -48,7 +47,7 @@ class BotCore:
 
 class RegisterCommand:
 
-    def __init__(self,handler,command: str = None) -> None:
+    def __init__(self,handler, command: str = None) -> None:
         self.command = command
         self.handler = handler
 
@@ -178,13 +177,46 @@ class Convert(Command):
                 text=str(e))
 
 
+@RegisterCommand(CommandHandler,'historical_course')
+class HistoricalCourse(Command):
+    url: str = None
+
+    @staticmethod
+    async def execute(update: Update, context: ContextTypes):
+        '''/historical_course <base_currency> <quoted_currency> <date_frome> <date_till>'''
+        return
+
+
+class CommandManager(ABC):
+
+    @staticmethod
+    @abstractmethod
+    async def execute(update: Update, context: ContextTypes):
+        pass
+
+    @classmethod
+    @abstractmethod
+    async def input_call(update: Update, context: ContextTypes):
+        pass
+
+
+class InputManager():
+
+    @staticmethod
+    async def execute(update: Update, context: ContextTypes):
+        pass
+
 @RegisterCommand(MessageHandler)
-class ActionCommandManager(Command):
+class ActionCommandManager(CommandManager):
     keybord = [['Конвертировать'],['Узнать курс валют'],['Получить исторический курс'],['Список команд']]
     filter = (filters.Text([w[0] for w in keybord]))
+
     @staticmethod
     async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message_text = update.message.text.lower()
+        message_broker_name = f'{update.effective_chat.id}'
+        if not message_broker.get(message_broker_name):
+            message_broker.delete(message_broker_name)
         match message_text:
             case 'узнать курс валют':
                 pass
@@ -194,18 +226,30 @@ class ActionCommandManager(Command):
                 pass
             case 'cписок команд':
                 pass
-            case _:
-                pass
+        await InputManager.execute(update,context)
 
 
 @RegisterCommand(MessageHandler)
-class CurrenciesCommandManager(Command):
+class FirsCurrencyCommandManager(CommandManager):
     keybord = urllib3.request('GET',urlunparse(UrlComponents(url='/info'))).json()['currencies']
     filter = (filters.Text([w[0] for w in keybord]))
+
     @staticmethod
     async def execute(update: Update, context: ContextTypes):
         pass
 
+    @classmethod
+    async def input_call(update: Update, context: ContextTypes):
+        pass
 
+
+class SecondCurrencyCommandManager(CommandManager):
+    @classmethod
+    async def input_call(update: Update, context: ContextTypes):
+        pass
+
+
+class ValueCurrencyManager(CommandManager):
+    pass
 if __name__ == '__main__':
     BotCore(TELEGRAM_BOT_TOKEN).run()
