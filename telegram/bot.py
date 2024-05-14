@@ -51,11 +51,11 @@ class RegisterCommand:
         self.command = command
         self.handler = handler
 
-    def __call__(self,obj,*args,**kwargs):
+    def __call__(self,obj):
         if self.command is None:
             self.command = obj.filter
         commands.append(self.handler(self.command,obj.execute))
-        return obj(*args,**kwargs)
+        return obj
 
 
 class Command(ABC):
@@ -68,14 +68,11 @@ class Command(ABC):
 class Start(Command):
     @staticmethod
     async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        reply_markup = ReplyKeyboardMarkup([], resize_keyboard=True)
-        message = 'что бы узнать все команды отправьте в чат /help,\
-                или выберите опцию на клавиатуре:'
-        message = ' '.join(message.split())
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=message,
-            reply_markup=reply_markup)    
+        message_broker_name = f'{update.effective_chat.id}'
+        reply_markup = ReplyKeyboardMarkup(ActionCommandManager.keybord, resize_keyboard=True)
+        message_broker.delete(message_broker_name)
+        await ActionCommandManager.input_call(update, context)
+
 
 
 
@@ -210,12 +207,14 @@ class InputManager():
         message_broker_dict = message_broker.hgetall(message_broker_name)
         for item in message_broker_dict.items():
             if not item[1]:
-                obj = item[1].encode()
-                eval(f'await {obj}.input_call(update, context)')
+                obj = item[0].decode('utf-8')
+                await eval(f'{obj}.input_call(update, context)')
                 return
-        action = message_broker_dict.pop(b'ActionCommandManager')
-        context.args.append([s.encode() for s in message_broker_dict.values()])
-        eval(f'await {action}.execute(update, context)')
+        action = message_broker_dict.pop(b'ActionCommandManager').decode('utf-8')
+        context.args = [s.decode('utf-8') for s in message_broker_dict.values()]
+        await eval(f'{action}.execute(update, context)')
+        message_broker.delete(message_broker_name)
+        await Start.execute(update,context)
 
 @RegisterCommand(MessageHandler)
 class ActionCommandManager(CommandManager):
@@ -229,7 +228,7 @@ class ActionCommandManager(CommandManager):
         if message_broker.hlen(message_broker_name) > 0:
             message_broker.delete(message_broker_name)
         match message_text:
-            case 'Узнать текущий курс':
+            case 'узнать текущий курс':
                 message_broker.hset(
                     name=message_broker_name,
                     mapping={
@@ -243,12 +242,12 @@ class ActionCommandManager(CommandManager):
                     name=message_broker_name,
                     mapping={
                         'ActionCommandManager':'Convert',
-                        'ValueCurrencyCommandManager':'',
+                        'ValueCommandManager':'',
                         'FirsCurrencyCommandManager':'',
                         'SecondCurrencyCommandManager':'',
                     }
                 )
-            case 'Получить исторический курс':
+            case 'получить исторический курс':
                 message_broker.hset(
                     name=message_broker_name,
                     mapping={
@@ -257,6 +256,7 @@ class ActionCommandManager(CommandManager):
                         'SecondCurrencyCommandManager':'',
                         'DateFromCommandManager':'',
                         'DateTillCommandManager':'',
+                        'FormatCommandManager':'',
                     }
                 )
             case 'cписок команд':
@@ -267,7 +267,9 @@ class ActionCommandManager(CommandManager):
     @classmethod
     async def input_call(cls, update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = ReplyKeyboardMarkup(cls.keybord, resize_keyboard=True)
-        message = 'Выберите опцию:'
+        message = 'что бы узнать все команды отправьте в чат /help,\
+                или выберите опцию на клавиатуре:'
+        message = ' '.join(message.split())
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
             text=message,
@@ -275,13 +277,38 @@ class ActionCommandManager(CommandManager):
 
 
 @RegisterCommand(MessageHandler)
-class FirsCurrencyCommandManager(CommandManager):
-    keybord = urllib3.request('GET',urlunparse(UrlComponents(url='/info'))).json()['currencies']
-    filter = filters.Text([w[0] for w in keybord])
+class CurrencyCommandManager(CommandManager):
+    currencies = urllib3.request('GET',urlunparse(UrlComponents(url='/info'))).json()['currencies']
+    filter = filters.Text(currencies)
+    keybord = [[key] for key in currencies]
+    
 
     @staticmethod
     async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        pass
+        message_broker_name: str = f'{update.effective_chat.id}'
+        if message_broker.hlen(message_broker_name) == 0:
+            return
+        if not message_broker.hget(message_broker_name,'FirsCurrencyCommandManager'):
+            await FirsCurrencyCommandManager.execute(update, context)
+        else:
+            await SecondCurrencyCommandManager.execute(update, context)
+
+    @classmethod
+    async def input_call(cls, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        return
+
+
+class FirsCurrencyCommandManager(CurrencyCommandManager):
+
+    @staticmethod
+    async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        message_text: str = update.message.text.upper()
+        message_broker_name: str = f'{update.effective_chat.id}'
+        message_broker.hset(
+            name=message_broker_name,
+            key='FirsCurrencyCommandManager',
+            value=message_text)
+        await InputManager.execute(update, context)
 
     @classmethod
     async def input_call(cls, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -293,7 +320,17 @@ class FirsCurrencyCommandManager(CommandManager):
             reply_markup=reply_markup)
 
 
-class SecondCurrencyCommandManager(FirsCurrencyCommandManager):
+class SecondCurrencyCommandManager(CurrencyCommandManager):
+
+    @staticmethod
+    async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        message_text: str = update.message.text.upper()
+        message_broker_name: str = f'{update.effective_chat.id}'
+        message_broker.hset(
+            name=message_broker_name,
+            key='SecondCurrencyCommandManager',
+            value=message_text)
+        await InputManager.execute(update, context)
 
     @classmethod
     async def input_call(cls, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -305,13 +342,26 @@ class SecondCurrencyCommandManager(FirsCurrencyCommandManager):
             reply_markup=reply_markup)
 
 
-class ValueCurrencyCommandManager(CommandManager):
-
+@RegisterCommand(MessageHandler)
+class ValueCommandManager(CommandManager):
     filter = filters.Regex(r'\d*')
 
     @staticmethod
     async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        return
+        message_broker_name: str = f'{update.effective_chat.id}'
+        message_text: str = update.message.text.replace(',','.')
+        if message_broker.hlen(message_broker_name) == 0:
+            return
+        if message_broker.hget(message_broker_name, 'ValueCommandManager') is not None:
+            try:
+                value = float(message_text)
+                message_broker.hset(
+                    name=message_broker_name,
+                    key='ValueCommandManager',
+                    value=value)
+            except:
+                return
+        await InputManager.execute(update, context)
 
     @classmethod
     async def input_call(cls, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -322,19 +372,48 @@ class ValueCurrencyCommandManager(CommandManager):
             reply_markup=ReplyKeyboardRemove())
 
 
-class DateFromCommandManager(CommandManager):
-    pass
+class FormatCommandManager(CommandManager):
+
+    @staticmethod
+    async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        return
+
+    @classmethod
+    async def input_call(cls, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        return
+
+
+class DateTimeCommandManager(CommandManager):
+    @staticmethod
+    async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        return
+
+    @classmethod
+    async def input_call(cls, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        return
+
+
+class DateFromCommandManager(DateTimeCommandManager):
+
+    @staticmethod
+    async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        return
+
+    @classmethod
+    async def input_call(cls, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        return
 
 
 class DateTillCommandManager(DateFromCommandManager):
-    pass
+
+    @staticmethod
+    async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        return
+
+    @classmethod
+    async def input_call(cls, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        return
 
 
 if __name__ == '__main__':
-    #BotCore(TELEGRAM_BOT_TOKEN).run()
-    message_broker.hset(
-        name='test',
-        mapping={'test1':'test1','test2':'test2'}
-    )
-    print(message_broker.hlen('tes'))
-    message_broker.delete('test')
+    BotCore(TELEGRAM_BOT_TOKEN).run()
