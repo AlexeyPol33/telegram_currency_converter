@@ -1,6 +1,7 @@
 import sys
 sys.path.append('.')
 import datetime
+from abc import ABC, abstractmethod
 from settings import BACKEND_HOST
 from flask import Flask, jsonify, request, send_file
 from flask.views import MethodView, View
@@ -15,7 +16,23 @@ import pandas as pd
 from io import BytesIO
 
 
+app = Flask('app')
+send_Formats: dict = {}
 
+class UrlRuleRegister():
+    global app
+
+    def __init__(self, path: str) -> None:
+        self.path = path
+
+    def __call__(self, obj: MethodView):
+        app.add_url_rule(
+            rule=self.path,
+            view_func=obj.as_view(obj.__name__))
+        return obj
+
+
+@UrlRuleRegister('/currency_list')
 class СurrencyList(MethodView):
     _engine: sqlalchemy.engine
 
@@ -42,18 +59,15 @@ class СurrencyList(MethodView):
             })
 
 
-class LastRate(MethodView):
-    def get(self,currency_name_first,currency_name_second):
-            last_rate = CurrencyPairRateNow(currency_name_first,currency_name_second)
-            return jsonify(last_rate())
-
-
+@UrlRuleRegister('/convert/<first_currency>/<second_currency>')
 class ConvertCurrencies(MethodView):
-    def get(self,currency_name_first,currency_name_second,value):
-        last_rate = CurrencyPairRateNow(currency_name_first,currency_name_second)
-        return last_rate(value = float(value))
 
+    def get(self,first_currency,second_currency):
+        value = float(request.args.get('value',1))
+        last_rate = CurrencyPairRateNow(first_currency,second_currency)
+        return last_rate(value=value)
 
+@UrlRuleRegister('/historical_rate/<first_currency>/<second_currency>')
 class HistoricalCurrencyRate(MethodView):
     formats:dict = None
 
@@ -61,7 +75,7 @@ class HistoricalCurrencyRate(MethodView):
         self.formats = {'.json':self.send_json,'.csv':self.send_csv,}
         super().__init__()
 
-    def get(self,currency_name_first:str,currency_name_second:str):
+    def get(self,first_currency, second_currency:str):
         _format: str = None
         currency_name_first = currency_name_first.upper()
         find_dot = currency_name_second.find('.')
@@ -91,29 +105,70 @@ class HistoricalCurrencyRate(MethodView):
         csv = data_frame.to_csv(index=False).encode()
         csv = BytesIO(csv)
         return send_file(csv,download_name='test.csv',mimetype='text/csv')
+    
+    class SendFormat(ABC):
 
-app = Flask('app')
+        @abstractmethod
+        def __init__(self) -> None:
+            pass
+        
+        @abstractmethod
+        def send(self):
+            pass
+    
+    class FormatRegistr():
+        global send_Formats
 
-app.add_url_rule(
-    '/info',
-    view_func=СurrencyList.as_view('currency_list')
-    )
-app.add_url_rule(
-    '/last_currency_rate/<currency_name_first>/<currency_name_second>',
-    view_func=LastRate.as_view('last_rate')
-    )
-app.add_url_rule(
-    '/convert/<value>/<currency_name_first>/<currency_name_second>',
-    view_func=ConvertCurrencies.as_view('convert_currencies')
-    )
-app.add_url_rule(
-    '/historical_currency_rate/<currency_name_first>/<currency_name_second>',
-    view_func=HistoricalCurrencyRate.as_view('historical_currency_rate')
-)
+        def __init__(self,format_name) -> None:
+            self.format_name = format_name
+
+        def __call__(self,obj):
+            send_Formats[self.format_name] = obj
+            return obj
+
+
+    @FormatRegistr('.csv')
+    class SendCSV(SendFormat):
+        def __init__(self) -> None:
+            pass
+
+        def send(self):
+            pass
+
+
+    @FormatRegistr('.json')
+    class SendJSON(SendFormat):
+
+        def __init__(self) -> None:
+            pass
+
+        def send(self):
+            pass
+
+    
+    @FormatRegistr('.txt')
+    class SendTXT(SendFormat):
+        def __init__(self) -> None:
+            pass
+
+        def send(self):
+            pass
+
+
+    @FormatRegistr('.png')
+    class SendPNG(SendFormat):
+        def __init__(self) -> None:
+            pass
+
+        def send(self):
+            pass
+
 
 def start_server():
 
     app.run(host=BACKEND_HOST)
 
 if __name__ == '__main__':
-    start_server()
+    #start_server()
+    print(HistoricalCurrencyRate.__name__)
+    pass
