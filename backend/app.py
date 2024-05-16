@@ -10,14 +10,17 @@ from database.model import CurrencyNames, CurrencyValue
 import sqlalchemy
 from sqlalchemy.orm import Session, sessionmaker
 from settings import DB_LOGIN, DB_PASSWORD, DB_NAME, DB_HOST
-from backend_exceptions import NoDataBaseValueError, CurrencyConversionError
+from backend_exceptions import NoDataBaseValueError, CurrencyConversionError, SendFormatError
 from currency_pair_converter import CurrencyPair, CurrencyPairRateNow, CurrencyPairRateByTime
 import pandas as pd
 from io import BytesIO
-
+import json
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 
 app = Flask('app')
 send_Formats: dict = {}
+
 
 class UrlRuleRegister():
     global app
@@ -34,20 +37,16 @@ class UrlRuleRegister():
 
 @UrlRuleRegister('/currency_list')
 class СurrencyList(MethodView):
-    _engine: sqlalchemy.engine
-
-    def __new__(cls):
-        def engine() -> sqlalchemy.engine:
-            login = DB_LOGIN
-            password = DB_PASSWORD
-            dbname = DB_NAME
-            host = DB_HOST
-            DNS = f"postgresql+psycopg2://{login}:{password}@{host}:5432/{dbname}"
-            engine = sqlalchemy.create_engine(DNS)
-            return engine
-        instance = super().__new__(cls)
-        instance._engine = engine()
-        return instance
+    @property
+    def _engine (self):
+        url_object = sqlalchemy.URL.create(
+            'postgresql+psycopg2',
+            username=DB_LOGIN,
+            password=DB_PASSWORD,
+            host=DB_HOST,
+            database=DB_NAME)
+        engine = sqlalchemy.create_engine(url_object)
+        return engine
 
     def get(self):
         currencies = None
@@ -69,53 +68,51 @@ class ConvertCurrencies(MethodView):
 
 @UrlRuleRegister('/historical_rate/<first_currency>/<second_currency>')
 class HistoricalCurrencyRate(MethodView):
-    formats:dict = None
 
-    def __init__(self):
-        self.formats = {'.json':self.send_json,'.csv':self.send_csv,}
-        super().__init__()
-
-    def get(self,first_currency, second_currency:str):
-        _format: str = None
-        currency_name_first = currency_name_first.upper()
-        find_dot = currency_name_second.find('.')
-        if find_dot > 0:
-            _format = currency_name_second[find_dot:]
-            currency_name_second = currency_name_second[:find_dot]
-        currency_name_second = currency_name_second.upper()
+    def get(self,first_currency: str, second_currency: str):
+        
+        first_currency = first_currency.upper()
+        second_currency = second_currency.upper()
         time_from = request.args.get('time_from',datetime.datetime.now())
         time_till = request.args.get('time_till',datetime.datetime.now())
-        if isinstance(time_from,str):
+        try:
             time_from = datetime.datetime.strptime(time_from,'%Y-%m-%d')
-        if isinstance(time_till,str):
             time_till = datetime.datetime.strptime(time_till,'%Y-%m-%d')
+        except:
+            pass
+        _format = request.args.get('format','.json')
+        send = send_Formats.get(_format)
+        if send is None:
+            raise SendFormatError('Format not supported',400)
         currency_pair_rate_by_time = CurrencyPairRateByTime(
-            first_currency=currency_name_first,
-            second_currency=currency_name_second,
+            first_currency=first_currency,
+            second_currency=second_currency,
             time_from=time_from,
-            time_till=time_till
-            )
-        return self.formats.get(_format,self.send_json)(currency_pair_rate_by_time)
+            time_till=time_till)
+        data = []
+        for i in currency_pair_rate_by_time:
+            data.extend(i)
+        return send(data).send()
+        
 
-    def send_json(self,currency_pair_rate_by_time: CurrencyPairRateByTime):
-        return jsonify([c for c in currency_pair_rate_by_time])
 
-    def send_csv(self,currency_pair_rate_by_time: CurrencyPairRateByTime):
-        data_frame = pd.DataFrame(*[data for data in currency_pair_rate_by_time])
-        csv = data_frame.to_csv(index=False).encode()
-        csv = BytesIO(csv)
-        return send_file(csv,download_name='test.csv',mimetype='text/csv')
-    
     class SendFormat(ABC):
 
-        @abstractmethod
-        def __init__(self) -> None:
-            pass
-        
+        def __init__(self, data: list[dict]) -> None:
+            self.data = data
+
+        @property
+        def file_name(self) -> str:
+            pair_name = tuple(self.data[0].values())[0]
+            start_datetime = tuple(self.data[0].values())[1]
+            end_datetime = tuple(self.data[-1].values())[1]
+            return f'{pair_name}_{start_datetime}-{end_datetime}'
+
         @abstractmethod
         def send(self):
             pass
-    
+
+
     class FormatRegistr():
         global send_Formats
 
@@ -129,39 +126,59 @@ class HistoricalCurrencyRate(MethodView):
 
     @FormatRegistr('.csv')
     class SendCSV(SendFormat):
-        def __init__(self) -> None:
-            pass
 
         def send(self):
-            pass
-
+            data_frame = pd.DataFrame(data=self.data)
+            csv = data_frame.to_csv(index=False).encode()
+            file = BytesIO(csv)
+            return send_file(
+                path_or_file=file,
+                download_name=f'{self.file_name}.csv',
+                mimetype='text/csv')
+        
 
     @FormatRegistr('.json')
     class SendJSON(SendFormat):
 
-        def __init__(self) -> None:
-            pass
-
         def send(self):
-            pass
+            file = str(self.data).encode()
+            return send_file(
+                path_or_file=BytesIO(file),
+                download_name=f'{self.file_name}.json')
 
-    
+
     @FormatRegistr('.txt')
     class SendTXT(SendFormat):
-        def __init__(self) -> None:
-            pass
 
         def send(self):
-            pass
+            file = BytesIO()
+            json.dump(self.data,file)
+            file.seek(0)
+            return send_file(
+                path_or_file=file,
+                download_name=f'{self.file_name}.txt')
 
 
     @FormatRegistr('.png')
     class SendPNG(SendFormat):
-        def __init__(self) -> None:
-            pass
 
         def send(self):
-            pass
+            date = [tuple(d.values())[1] for d in self.data]
+            price = [tuple(d.values())[2] for d in self.data]
+            file = BytesIO()
+            mpl.use('agg')
+            plt.figure(figsize=(20,14), dpi= 80)
+            plt.plot(date,price,color='blue')
+            plt.xlabel('Время')
+            plt.ylabel('Цена')
+            plt.title(self.file_name, fontsize=22)
+            plt.grid(axis='both', alpha=.3)
+            plt.savefig(file,format='png')
+            file.seek(0)
+            return send_file(
+                path_or_file=file,
+                download_name=f'{self.file_name}.png',
+                mimetype='image/png')
 
 
 def start_server():
@@ -169,6 +186,4 @@ def start_server():
     app.run(host=BACKEND_HOST)
 
 if __name__ == '__main__':
-    #start_server()
-    print(HistoricalCurrencyRate.__name__)
-    pass
+    start_server()
