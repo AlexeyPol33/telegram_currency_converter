@@ -90,7 +90,7 @@ class CommandList(Command):
 
 @RegisterCommand(CommandHandler,'list_currencies')
 class ListCurrencies(Command):
-    url = urlunparse(UrlComponents(url='/info'))
+    url = urlunparse(UrlComponents(url='/currency_list'))
 
     @staticmethod
     async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -104,7 +104,7 @@ class ListCurrencies(Command):
 
 @RegisterCommand(CommandHandler,'last_course')
 class LastCourse(Command):
-    url: str = urlunparse(UrlComponents(url='/last_currency_rate/{}/{}'))
+    url: str = urlunparse(UrlComponents(url='/convert/{}/{}'))
 
     @staticmethod
     async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -139,7 +139,7 @@ class LastCourse(Command):
 
 @RegisterCommand(CommandHandler,'convert')
 class Convert(Command):
-    url: str = urlunparse(UrlComponents(url='/convert/{}/{}/{}'))
+    url: str = urlunparse(UrlComponents(url='/convert/{}/{}',query={'value':'{}'}))
 
     @staticmethod
     async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -150,7 +150,7 @@ class Convert(Command):
             value = float(context.args[0])
             firs_currency = context.args[1]
             second_currency = context.args[2]
-            url = Convert.url.format(value,firs_currency,second_currency)
+            url = Convert.url.format(firs_currency,second_currency,value)
             async with aiohttp.ClientSession() as session:
                 response = await session.get(url)
                 if response.status != 200:
@@ -278,7 +278,7 @@ class ActionCommandManager(CommandManager):
 
 @RegisterCommand(MessageHandler)
 class CurrencyCommandManager(CommandManager):
-    currencies = urllib3.request('GET',urlunparse(UrlComponents(url='/info'))).json()['currencies']
+    currencies = urllib3.request('GET',urlunparse(UrlComponents(url='/currency_list'))).json()['currencies']
     filter = filters.Text(currencies)
     keybord = [[key] for key in currencies]
     
