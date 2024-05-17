@@ -139,7 +139,7 @@ class LastCourse(Command):
 
 @RegisterCommand(CommandHandler,'convert')
 class Convert(Command):
-    url: str = urlunparse(UrlComponents(url='/convert/{}/{}',query={'value':'{}'}))
+    url: str = urlunparse(UrlComponents(url='/convert/{}/{}?value={}'))
 
     @staticmethod
     async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -259,7 +259,7 @@ class ActionCommandManager(CommandManager):
                         'FormatCommandManager':'',
                     }
                 )
-            case 'cписок команд':
+            case 'список команд':
                 await CommandList.execute(update, context)
                 return
         await InputManager.execute(update, context)

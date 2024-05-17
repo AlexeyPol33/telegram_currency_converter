@@ -6,6 +6,7 @@ psycopg2==2.9.9
 pyTelegramBotAPI==4.14.1
 python-dotenv==1.0.0
 python-telegram-bot==20.7
+python-telegram-bot-calendar==1.0.5
 matplotlib==3.8.4
 pandas==2.2.2
 redis==5.0.4
