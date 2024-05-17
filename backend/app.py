@@ -141,9 +141,9 @@ class HistoricalCurrencyRate(MethodView):
     class SendJSON(SendFormat):
 
         def send(self):
-            file = str(self.data).encode()
+            file = BytesIO(json.dumps(self.data,default=str).encode())
             return send_file(
-                path_or_file=BytesIO(file),
+                path_or_file=file,
                 download_name=f'{self.file_name}.json')
 
 
@@ -151,9 +151,7 @@ class HistoricalCurrencyRate(MethodView):
     class SendTXT(SendFormat):
 
         def send(self):
-            file = BytesIO()
-            json.dump(self.data,file)
-            file.seek(0)
+            file = BytesIO(str(self.data).encode())
             return send_file(
                 path_or_file=file,
                 download_name=f'{self.file_name}.txt')
