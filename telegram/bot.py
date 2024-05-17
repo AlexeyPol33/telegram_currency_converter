@@ -11,11 +11,12 @@ from urllib.parse import urlunparse
 import urllib3
 from collections import namedtuple
 import logging
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters,CallbackQueryHandler, CallbackContext
+from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 from typing import NamedTuple
 import redis
-
+from io import BytesIO
 
 commands = []
 message_broker = redis.Redis(host=REDIS_HOST, port=REDIS_PORT)
@@ -52,8 +53,13 @@ class RegisterCommand:
         self.handler = handler
 
     def __call__(self,obj):
+        
         if self.command is None:
-            self.command = obj.filter
+            try:
+                self.command = obj.filter
+            except:
+                commands.append(self.handler(obj.execute))
+                return obj
         commands.append(self.handler(self.command,obj.execute))
         return obj
 
@@ -176,12 +182,44 @@ class Convert(Command):
 
 @RegisterCommand(CommandHandler,'historical_course')
 class HistoricalCourse(Command):
-    url: str = None
+    url: str = urlunparse(
+        UrlComponents(
+            url='/historical_rate/{}/{}?time_from={}&time_till={}&format={}'
+            ))
 
     @staticmethod
     async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        '''/historical_course <base_currency> <quoted_currency> <date_frome> <date_till>'''
-        return
+        '''/historical_course - <base_currency> <quoted_currency> <date_frome> <date_till>'''
+        try:
+            firs_currency = context.args[0]
+            second_currency = context.args[1]
+            date_frome = context.args[2]
+            date_till = context.args[3]
+            _format = context.args[4]
+            url = HistoricalCourse.url.format(firs_currency,second_currency,date_frome,date_till,_format)
+            async with aiohttp.ClientSession() as session:
+                response = await session.get(url)
+                if response.status != 200:
+                    await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text='''Ошибка: Не получилось конвертировать валюты,
+                        проверьте вводные данные,
+                        возможно требуемые валюты отсутствуют.''')
+                    return
+                file_name = response.content_disposition.filename
+                data = BytesIO(await response.content.read())
+                await context.bot.send_document(
+                    chat_id=update.effective_chat.id,
+                    document=data,filename=file_name)
+        except IndexError:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text='Отсутствует требуемое значение')
+        except Exception as e:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=str(e))
+
 
 
 class CommandManager(ABC):
@@ -215,6 +253,7 @@ class InputManager():
         await eval(f'{action}.execute(update, context)')
         message_broker.delete(message_broker_name)
         await Start.execute(update,context)
+
 
 @RegisterCommand(MessageHandler)
 class ActionCommandManager(CommandManager):
@@ -345,7 +384,7 @@ class SecondCurrencyCommandManager(CurrencyCommandManager):
 @RegisterCommand(MessageHandler)
 class ValueCommandManager(CommandManager):
     filter = filters.Regex(r'\d*')
-
+    
     @staticmethod
     async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message_broker_name: str = f'{update.effective_chat.id}'
@@ -383,36 +422,68 @@ class FormatCommandManager(CommandManager):
         return
 
 
+@RegisterCommand(CallbackQueryHandler)
 class DateTimeCommandManager(CommandManager):
+
     @staticmethod
-    async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        return
+    async def execute(update: Update, context: CallbackContext):
+
+        result, key, step = DetailedTelegramCalendar().process(update.callback_query.data)
+        if not result and key:
+            await context.bot.edit_message_text(f"Select {LSTEP[step]}",
+                              update.effective_chat.id,
+                              update.effective_message.id,
+                              reply_markup=key)
+        elif result:
+            context.args[0] = result
+            await context.bot.edit_message_text(f"You selected {result}",
+                              update.effective_chat.id,
+                              update.effective_message.id)
 
     @classmethod
     async def input_call(cls, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        return
+        calendar, step = DetailedTelegramCalendar().build()
+        await context.bot.send_message(
+            update.effective_chat.id,
+            'Клавиатура скрыта',
+            reply_markup=ReplyKeyboardRemove())
+        await context.bot.send_message(
+            update.effective_chat.id,
+            f"Select {LSTEP[step]}",
+            reply_markup=calendar)
 
 
 class DateFromCommandManager(DateTimeCommandManager):
 
     @staticmethod
-    async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        return
+    async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE,datetime:str):
+        message_broker_name = str(update.effective_chat.id)
+        message_broker.hset(
+            name=message_broker_name,
+            key='DateFromCommandManager',
+            value=context.args[0])
+        await InputManager.execute(update, context)
+        
+
 
     @classmethod
     async def input_call(cls, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        return
-
+        return await super().input_call(update, context)
 
 class DateTillCommandManager(DateFromCommandManager):
 
     @staticmethod
     async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        return
+        message_broker_name = str(update.effective_chat.id)
+        message_broker.hset(
+            name=message_broker_name,
+            key='DateTillCommandManager',
+            value=context.args[0])
+        await InputManager.execute(update, context)
 
     @classmethod
     async def input_call(cls, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        return
+        return await super().input_call(update, context)
 
 
 if __name__ == '__main__':
