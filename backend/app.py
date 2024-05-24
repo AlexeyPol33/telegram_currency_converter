@@ -93,8 +93,13 @@ class HistoricalCurrencyRate(MethodView):
         for i in currency_pair_rate_by_time:
             data.extend(i)
         return send(data).send()
-        
 
+@UrlRuleRegister('/send_formats')
+class SendFormatsView(MethodView):
+    global send_Formats
+
+    def get(self):
+        return jsonify(send_Formats.keys())
 
     class SendFormat(ABC):
 
