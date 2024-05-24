@@ -427,7 +427,7 @@ class DateTimeCommandManager(CommandManager):
 
     @staticmethod
     async def execute(update: Update, context: CallbackContext):
-
+        message_broker_name = str(update.effective_chat.id)
         result, key, step = DetailedTelegramCalendar().process(update.callback_query.data)
         if not result and key:
             await context.bot.edit_message_text(f"Select {LSTEP[step]}",
@@ -439,14 +439,16 @@ class DateTimeCommandManager(CommandManager):
             await context.bot.edit_message_text(f"You selected {result}",
                               update.effective_chat.id,
                               update.effective_message.id)
+            if not message_broker.hget(message_broker_name,'DateFromCommandManager'):
+                await DateFromCommandManager.execute(update, context)
+            else:
+                await DateTillCommandManager.execute(update,context)
+            await InputManager.execute(update, context)
+            
 
     @classmethod
     async def input_call(cls, update: Update, context: ContextTypes.DEFAULT_TYPE):
         calendar, step = DetailedTelegramCalendar().build()
-        await context.bot.send_message(
-            update.effective_chat.id,
-            'Клавиатура скрыта',
-            reply_markup=ReplyKeyboardRemove())
         await context.bot.send_message(
             update.effective_chat.id,
             f"Select {LSTEP[step]}",
@@ -462,13 +464,18 @@ class DateFromCommandManager(DateTimeCommandManager):
             name=message_broker_name,
             key='DateFromCommandManager',
             value=context.args[0])
-        await InputManager.execute(update, context)
-        
+        context.args.clear()
 
 
     @classmethod
     async def input_call(cls, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await context.bot.send_message(
+            update.effective_chat.id,
+            'Выбор начальной даты.\n Следуйтеинструкциям ниже:',
+            reply_markup=ReplyKeyboardRemove()
+        )
         return await super().input_call(update, context)
+
 
 class DateTillCommandManager(DateFromCommandManager):
 
@@ -479,10 +486,15 @@ class DateTillCommandManager(DateFromCommandManager):
             name=message_broker_name,
             key='DateTillCommandManager',
             value=context.args[0])
-        await InputManager.execute(update, context)
+        context.args.clear()
 
     @classmethod
     async def input_call(cls, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await context.bot.send_message(
+            update.effective_chat.id,
+            'Выбор конечной даты.\n Следуйтеинструкциям ниже:',
+            reply_markup=ReplyKeyboardRemove()
+        )
         return await super().input_call(update, context)
 
 
