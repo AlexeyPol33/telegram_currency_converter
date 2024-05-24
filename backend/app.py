@@ -94,7 +94,7 @@ class HistoricalCurrencyRate(MethodView):
             data.extend(i)
         return send(data).send()
 
-@UrlRuleRegister('/send_formats')
+@UrlRuleRegister('/formats_list')
 class SendFormatsView(MethodView):
     global send_Formats
 
