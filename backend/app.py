@@ -99,7 +99,7 @@ class SendFormatsView(MethodView):
     global send_Formats
 
     def get(self):
-        return jsonify(send_Formats.keys())
+        return jsonify({'formats':list(send_Formats.keys())})
 
     class SendFormat(ABC):
 
