@@ -11,10 +11,11 @@ from urllib.parse import urlunparse
 import urllib3
 from collections import namedtuple
 import logging
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters,CallbackQueryHandler, CallbackContext
 from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 from typing import NamedTuple
+import datetime
 import redis
 from io import BytesIO
 
@@ -116,6 +117,7 @@ class LastCourse(Command):
     async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
         '''/last_course <base_currency> <quoted_currency> - получить текущий курс мосбиржи\
             базовой валюты(base_currency) в котируемой валюте(quoted_currency)'''
+        data: dict[str] = None
         try:
             firs_currency = context.args[0]
             second_currency = context.args[1]
@@ -129,10 +131,25 @@ class LastCourse(Command):
                         проверьте вводные данные,\
                         возможно требуемые валюты отсутствуют.''')
                     return
-                data = await response.json()
+                data = dict(await response.json())
                 await context.bot.send_message(
                     chat_id=update.effective_chat.id,
                     text=str(data))
+            async with aiohttp.ClientSession() as session:
+                time_from = datetime.datetime.strptime(data['datetime'].split(' ')[0],'%Y-%m-%d')
+                time_from = time_from - datetime.timedelta(days=30)
+                time_from = datetime.datetime.strftime(time_from,'%Y-%m-%d')
+                time_till = data['datetime'].split(' ')[0]
+
+                url = urlunparse(UrlComponents(
+                    url=f'/historical_rate/{firs_currency}/{second_currency}',
+                    query=f'time_from={time_from}&time_till={time_till}&format=.png'))
+                print(url)
+                response = await session.get(url)
+                file = BytesIO(await response.content.read())
+                await context.bot.send_photo(
+                        chat_id=update.effective_chat.id,
+                        photo=file)
         except IndexError:
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
@@ -170,6 +187,21 @@ class Convert(Command):
                 await context.bot.send_message(
                     chat_id=update.effective_chat.id,
                     text=str(data))
+            async with aiohttp.ClientSession() as session:
+                time_from = datetime.datetime.strptime(data['datetime'].split(' ')[0],'%Y-%m-%d')
+                time_from = time_from - datetime.timedelta(days=30)
+                time_from = datetime.datetime.strftime(time_from,'%Y-%m-%d')
+                time_till = data['datetime'].split(' ')[0]
+
+                url = urlunparse(UrlComponents(
+                    url=f'/historical_rate/{firs_currency}/{second_currency}',
+                    query=f'time_from={time_from}&time_till={time_till}&format=.png'))
+                print(url)
+                response = await session.get(url)
+                file = BytesIO(await response.content.read())
+                await context.bot.send_photo(
+                        chat_id=update.effective_chat.id,
+                        photo=file)
         except IndexError:
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
@@ -411,16 +443,39 @@ class ValueCommandManager(CommandManager):
             reply_markup=ReplyKeyboardRemove())
 
 
+@RegisterCommand(MessageHandler)
 class FormatCommandManager(CommandManager):
+    formats = urllib3.request('GET',urlunparse(UrlComponents(url='/formats_list'))).json()['formats']
+    filter = filters.Text(formats)
+    keybord = [[key] for key in formats]
+
 
     @staticmethod
     async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        return
+
+        message_broker_name = str(update.effective_chat.id)
+        message_text: str = update.message.text
+        if message_broker.hlen(message_broker_name) == 0:
+            return
+        else:
+            message_broker.hset(
+                name=message_broker_name,
+                key='FormatCommandManager',
+                value=message_text
+            )
+            await InputManager.execute(update, context)
 
     @classmethod
     async def input_call(cls, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        return
-
+        message = 'Выберите формат файла:'
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=message,
+            reply_markup=ReplyKeyboardMarkup(cls.keybord,resize_keyboard=True))
+        await cls.execute(update, context)
+        await context.bot.delete_messages(
+                chat_id=update.effective_chat.id,
+                message_ids=[update.effective_message.id + 1])
 
 @RegisterCommand(CallbackQueryHandler)
 class DateTimeCommandManager(CommandManager):
@@ -435,16 +490,18 @@ class DateTimeCommandManager(CommandManager):
                               update.effective_message.id,
                               reply_markup=key)
         elif result:
-            context.args[0] = result
-            await context.bot.edit_message_text(f"You selected {result}",
-                              update.effective_chat.id,
-                              update.effective_message.id)
+            context.args = [str(result)]
+            await context.bot.delete_messages(
+                chat_id=update.effective_chat.id,
+                message_ids=[update.effective_message.id,update.effective_message.id - 1])
             if not message_broker.hget(message_broker_name,'DateFromCommandManager'):
                 await DateFromCommandManager.execute(update, context)
             else:
                 await DateTillCommandManager.execute(update,context)
             await InputManager.execute(update, context)
-            
+        else:
+            raise
+
 
     @classmethod
     async def input_call(cls, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -458,26 +515,26 @@ class DateTimeCommandManager(CommandManager):
 class DateFromCommandManager(DateTimeCommandManager):
 
     @staticmethod
-    async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE,datetime:str):
+    async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message_broker_name = str(update.effective_chat.id)
         message_broker.hset(
             name=message_broker_name,
             key='DateFromCommandManager',
             value=context.args[0])
-        context.args.clear()
-
+        context.args = None
+        
 
     @classmethod
     async def input_call(cls, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(
             update.effective_chat.id,
-            'Выбор начальной даты.\n Следуйтеинструкциям ниже:',
+            'Выбор начальной даты.\nСледуйтеинструкциям ниже:',
             reply_markup=ReplyKeyboardRemove()
         )
-        return await super().input_call(update, context)
+        await super().input_call(update, context)
 
 
-class DateTillCommandManager(DateFromCommandManager):
+class DateTillCommandManager(DateTimeCommandManager):
 
     @staticmethod
     async def execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -486,16 +543,17 @@ class DateTillCommandManager(DateFromCommandManager):
             name=message_broker_name,
             key='DateTillCommandManager',
             value=context.args[0])
-        context.args.clear()
+        context.args = None
+        
 
     @classmethod
     async def input_call(cls, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(
             update.effective_chat.id,
-            'Выбор конечной даты.\n Следуйтеинструкциям ниже:',
+            'Выбор конечной даты.\nСледуйтеинструкциям ниже:',
             reply_markup=ReplyKeyboardRemove()
         )
-        return await super().input_call(update, context)
+        await super().input_call(update, context)
 
 
 if __name__ == '__main__':
