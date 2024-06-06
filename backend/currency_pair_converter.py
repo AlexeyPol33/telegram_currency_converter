@@ -1,36 +1,40 @@
+import sys
+sys.path.append('.')
 import datetime
 from database.model import CurrencyNames, CurrencyValue
 import sqlalchemy
 from sqlalchemy.orm import Session
 from settings import DB_LOGIN, DB_PASSWORD, DB_NAME, DB_HOST
+from itertools import zip_longest
 from backend_exceptions import NoDataBaseValueError, CurrencyConversionError
-import sys
-sys.path.append('.')
 
 
-class CurrencyPair:
+class CurrencyPairBase:
     first_currency: str | None
     second_currency: str | None
     date_time: datetime = None
     value: float = None
-    _engine: sqlalchemy.engine = None
+
+    def __init__(self, **kwargs) -> None:
+        self.first_currency = kwargs.get('first_currency', None)
+        self.second_currency = kwargs.get('second_currency', None)
+        self.date_time = kwargs.get('date_time', None)
+        self.value = kwargs.get('value', None)
+
+    @property
+    def _engine(self):
+        url_object = sqlalchemy.URL.create(
+            'postgresql+psycopg2',
+            username=DB_LOGIN,
+            password=DB_PASSWORD,
+            host=DB_HOST,
+            database=DB_NAME)
+        engine = sqlalchemy.create_engine(url_object)
+        return engine
+
+class CurrencyPair(CurrencyPairBase):
     _currency_name: CurrencyNames | tuple[CurrencyNames] = None
     _reverse_pair: bool = False
-
-    def __new__(cls, *args, **kwargs):
-        def engine():
-            url_object = sqlalchemy.URL.create(
-                'postgresql+psycopg2',
-                username=DB_LOGIN,
-                password=DB_PASSWORD,
-                host=DB_HOST,
-                database=DB_NAME,
-            )
-            engine = sqlalchemy.create_engine(url_object)
-            return engine
-        instance = super().__new__(cls)
-        instance._engine = engine()
-        return instance
 
     def __init__(self, first_currency: str = None,
                  second_currency: str = None,
@@ -41,6 +45,10 @@ class CurrencyPair:
             self._init_currencies(first_currency, second_currency)
         else:
             raise CurrencyConversionError('initialization error')
+    
+    @classmethod
+    def init_obj(cls,object:CurrencyPairBase) -> object:
+        pass
 
     def _init_currencies(self, first_currency, second_currency):
         self.first_currency = str(first_currency).upper()
@@ -175,14 +183,6 @@ class CurrencyPairRateByTime(CurrencyPair):
             self.time_till = time_till
         super().__init__(first_currency, second_currency, obj, *args, **kwargs)
 
-    def __getitem__(self, key: datetime) -> list[dict]:
-        if isinstance(self._currency_name, CurrencyNames):
-            item = CurrencyPairRateByTimeSimpleConvert(obj=self)
-            return item[key]
-        elif isinstance(self._currency_name, tuple):
-            item = CurrencyPairRateByTimeCrossConvert(obj=self)
-            return item[key]
-
     def __iter__(self):
         if isinstance(self._currency_name, CurrencyNames):
             return CurrencyPairRateByTimeSimpleConvert(obj=self).__iter__()
@@ -191,26 +191,6 @@ class CurrencyPairRateByTime(CurrencyPair):
 
 
 class CurrencyPairRateByTimeSimpleConvert(CurrencyPairRateByTime):
-    def __getitem__(self, key: datetime) -> list[dict]:
-        currency_value: CurrencyValue = None
-        delta = key + datetime.timedelta(days=1)
-
-        with Session(bind=self._engine) as session:
-            currency_value = session.query(CurrencyValue).filter(
-                CurrencyValue.currency == self._currency_name.id,
-                delta >= CurrencyValue.datetime,
-                CurrencyValue.datetime >= key).all()
-            if not currency_value:
-                raise NoDataBaseValueError(
-                    'There is no value in this time period'
-                    )
-            return [{
-                'currency_pair': '/'.join([
-                    self.first_currency,
-                    self.second_currency]),
-                'datetime':i.datetime,
-                'value':i.price,
-                } for i in currency_value]
 
     def __iter__(self):
         self.__start_time = self.time_from
@@ -249,42 +229,68 @@ class CurrencyPairRateByTimeSimpleConvert(CurrencyPairRateByTime):
                 'value':i.price,
                 } for i in query]
 
-
 class CurrencyPairRateByTimeCrossConvert(CurrencyPairRateByTime):
-    def __getitem__(self, key: datetime) -> list[dict]:
-        delta = key + datetime.timedelta(days=1)
-        currency_value_one: list = []
-        currency_value_two: list = []
-        result: list[dict] = []
-        with Session(bind=self._engine) as session:
-            query = session.query(CurrencyValue).filter(
-                CurrencyValue.currency == self._currency_name[0].id,
-                CurrencyValue.currency == self._currency_name[1].id,
-                CurrencyValue.datetime <= delta,
-                CurrencyValue.datetime >= key).all()
-            for q in query:
-                if q.currency == self._currency_name[0].id:
-                    currency_value_one.append(q)
-                else:
-                    currency_value_two.append(q)
-            currency_value_one.sort(key=lambda q: q.datetime)
-            currency_value_two.sort(key=lambda q: q.datetime)
-            for currency_one in currency_value_one:
-                for currency_two in currency_value_two:
-                    if currency_one.datetime == currency_two.datetime:
-                        result.append({
-                            'currency_pair': '/'.join([
-                                self.first_currency,
-                                self.second_currency]),
-                            'datetime': currency_one.datetime,
-                            'value': currency_one.price / currency_two.price})
-                        currency_value_two.remove(currency_two)
-                        continue
-        return result
 
     def __iter__(self):
-        raise CurrencyConversionError()
-        return super().__iter__()
+        self.__start_time = self.time_from
+        self.__time_step = datetime.timedelta(days=30)
+        return self
 
     def __next__(self):
-        raise StopIteration
+        result = []
+        if self.__start_time > self.time_till:
+            raise StopIteration
+        elif self.__start_time + self.__time_step >= self.time_till:
+            with Session(bind=self._engine) as session:
+                query_one = session.query(CurrencyValue).filter(
+                    CurrencyValue.currency == self._currency_name[0].id,
+                    CurrencyValue.datetime >= self.__start_time,
+                    CurrencyValue.datetime <= self.time_till).all()
+                query_two = session.query(CurrencyValue).filter(
+                    CurrencyValue.currency == self._currency_name[1].id,
+                    CurrencyValue.datetime >= self.__start_time,
+                    CurrencyValue.datetime <= self.time_till).all()
+                query_zip = zip_longest(query_one,query_two)
+                for pair_one, pair_two in query_zip:
+                    if pair_one is None or pair_two is None:
+                        continue
+                    elif pair_one.datetime == pair_two.datetime:
+                        result.append(
+                            {
+                                'currency_pair':'/'.join(
+                                    [self.first_currency,
+                                     self.second_currency]),
+                                'datetime':pair_one.datetime,
+                                'value':pair_one.price/pair_two.price
+                            })
+                self.__start_time = self.__start_time + self.__time_step
+                return result
+        with Session(bind=self._engine) as session:
+            delta = self.__start_time + self.__time_step
+
+            query_one = session.query(CurrencyValue).filter(
+                    CurrencyValue.currency == self._currency_name[0].id,
+                    CurrencyValue.datetime >= self.__start_time,
+                    CurrencyValue.datetime <= delta).all()
+            query_two = session.query(CurrencyValue).filter(
+                    CurrencyValue.currency == self._currency_name[1].id,
+                    CurrencyValue.datetime >= self.__start_time,
+                    CurrencyValue.datetime <= delta).all()
+            self.__start_time = delta
+            query_zip = zip_longest(query_one,query_two)
+            for pair_one, pair_two in query_zip:
+                print(pair_one, pair_two)
+                if pair_one is None or pair_two is None:
+                    continue
+                elif pair_one.datetime == pair_two.datetime:
+                    result.append(
+                        {
+                            'currency_pair':'/'.join(
+                                [self.first_currency,
+                                    self.second_currency]),
+                            'datetime':pair_one.datetime,
+                            'value':pair_one.price/pair_two.price
+                        })
+                self.__start_time = delta
+                return result
+        

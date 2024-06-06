@@ -90,9 +90,12 @@ class HistoricalCurrencyRate(MethodView):
             time_from=time_from,
             time_till=time_till)
         data = []
-        for i in currency_pair_rate_by_time:
-            data.extend(i)
-        return send(data).send()
+        try:
+            for i in currency_pair_rate_by_time:
+                data.extend(i)
+            return send(data).send()
+        except:
+            raise NoDataBaseValueError('Doesn t match up in time')
 
 @UrlRuleRegister('/formats_list')
 class SendFormatsView(MethodView):
