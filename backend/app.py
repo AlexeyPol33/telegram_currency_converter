@@ -10,7 +10,7 @@ from database.model import CurrencyNames, CurrencyValue
 import sqlalchemy
 from sqlalchemy.orm import Session, sessionmaker
 from settings import DB_LOGIN, DB_PASSWORD, DB_NAME, DB_HOST
-from backend_exceptions import NoDataBaseValueError, CurrencyConversionError, SendFormatError
+from backend_exceptions import NoDataBaseValueError, CurrencyConversionError, SendFormatError, Base_Backend_Exceptions
 from currency_pair_converter import CurrencyPair, CurrencyPairRateNow, CurrencyPairRateByTime
 import pandas as pd
 from io import BytesIO
@@ -20,6 +20,11 @@ import matplotlib.pyplot as plt
 
 app = Flask('app')
 send_Formats: dict = {}
+
+
+@app.errorhandler(Base_Backend_Exceptions)
+def handle_bad_request(e):
+    return e.message, e.status_code
 
 
 class UrlRuleRegister():

@@ -1,6 +1,10 @@
 
+class Base_Backend_Exceptions(Exception):
+    message:str = None
+    status_code:int = None
 
-class NoDataBaseValueError(Exception):
+
+class NoDataBaseValueError(Base_Backend_Exceptions):
 
     message:str
     status_code:int
@@ -13,7 +17,7 @@ class NoDataBaseValueError(Exception):
     def to_dict(self):
         return {'message':self.message}
     
-class CurrencyConversionError(Exception):
+class CurrencyConversionError(Base_Backend_Exceptions):
     message:str
     status_code:int
 
@@ -25,7 +29,7 @@ class CurrencyConversionError(Exception):
     def to_dict(self):
         return {'message':self.message, 'status_code':self.status_code}
 
-class SendFormatError(Exception):
+class SendFormatError(Base_Backend_Exceptions):
     message: str
     status_code: int
 
