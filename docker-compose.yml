@@ -33,9 +33,6 @@ services:
       - REDIS_DATABASES=1
     ports:
       - "6379:6379"
-    volumes:
-      - ./redis
-      - ./local/etc/redis/redis.conf
 
   harvester:
     build:
@@ -74,6 +71,7 @@ services:
     restart: unless-stopped
     environment:
       - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - TELEGRAM_BOT_TOKEN= #Your bot token
       - DB_HOST=postgredb
       - BACKEND_HOST=backend

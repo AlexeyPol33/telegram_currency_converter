@@ -511,9 +511,9 @@ class FormatCommandManager(CommandManager):
             reply_markup=ReplyKeyboardMarkup(cls.keybord,
                                              resize_keyboard=True))
         await cls.execute(update, context)
-        await context.bot.delete_messages(
+        await context.bot.delete_message(
                 chat_id=update.effective_chat.id,
-                message_ids=[update.effective_message.id + 1])
+                message_id=update.effective_message.id + 1)
 
 
 @RegisterCommand(CallbackQueryHandler)
@@ -532,11 +532,15 @@ class DateTimeCommandManager(CommandManager):
                 reply_markup=key)
         elif result:
             context.args = [str(result)]
-            await context.bot.delete_messages(
+            await context.bot.delete_message(
                 chat_id=update.effective_chat.id,
-                message_ids=[
-                    update.effective_message.id,
-                    update.effective_message.id - 1])
+                message_id=update.effective_message.id)
+            try:
+                await context.bot.delete_message(
+                    chat_id=update.effective_chat.id,
+                    message_id=update.effective_message.id + 1)
+            except:
+                pass
             if not message_broker.hget(
                     message_broker_name, 'DateFromCommandManager'):
                 await DateFromCommandManager.execute(update, context)
